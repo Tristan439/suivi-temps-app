@@ -15,9 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
-import { CATEGORY_OPTIONS } from '../constants/categories';
+import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
-import { AppSettings, DEFAULT_SETTINGS, loadSettings } from '../services/settings';
+import { AppSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from '../services/settings';
 
 const DEFAULT_WORK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroWorkMinutes;
 const DEFAULT_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroBreakMinutes;
@@ -35,6 +35,7 @@ type PomodoroRouteParams = {
   autoStart?: boolean;
   initialDescription?: string;
   taskCardId?: string;
+  preselectedSubCategory?: SubCategoryKey;
 };
 
 const PomodoroScreen = () => {
@@ -56,15 +57,23 @@ const PomodoroScreen = () => {
       CATEGORY_OPTIONS[0]?.value ||
       '',
   );
+  const [subCategory, setSubCategory] = useState<SubCategoryKey>(
+    SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention',
+  );
   const [stages, setStages] = useState<Stage[]>([]);
   const [selectedStage, setSelectedStage] = useState<string | undefined>();
   const [completedSessions, setCompletedSessions] = useState(0);
   const [autoStartBreaks, setAutoStartBreaks] = useState(DEFAULT_SETTINGS.autoStartPomodoroBreaks);
   const [preferredStageId, setPreferredStageId] = useState<string | undefined>(DEFAULT_SETTINGS.defaultStageId);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
 
   const categoryOptions = useMemo<SelectOption[]>(
     () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
+    [],
+  );
+  const subCategoryOptions = useMemo<SelectOption[]>(
+    () => SUB_CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
     [],
   );
 
@@ -108,6 +117,17 @@ const PomodoroScreen = () => {
 
       setAutoStartBreaks(nextAutoStartBreaks);
       setPreferredStageId(nextDefaultStageId);
+      if (!isActive && !hasElapsedCurrentSession) {
+        setHasElapsedCurrentSession(false);
+      }
+      settingsRef.current = {
+        ...settingsRef.current,
+        defaultPomodoroWorkMinutes: nextWork,
+        defaultPomodoroBreakMinutes: nextBreak,
+        defaultPomodoroLongBreakMinutes: nextLongBreak,
+        autoStartPomodoroBreaks: nextAutoStartBreaks,
+        defaultStageId: nextDefaultStageId,
+      };
     },
     [isActive, isWorkSession, isLongBreak, hasElapsedCurrentSession],
   );
@@ -115,17 +135,22 @@ const PomodoroScreen = () => {
   const loadAndApplySettings = useCallback(async () => {
     try {
       const loaded = await loadSettings();
+      settingsRef.current = loaded;
       applySettings(loaded);
     } catch (error) {
       console.error('Error loading pomodoro settings:', error);
     }
   }, [applySettings]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadAndApplySettings();
-    }, [loadAndApplySettings]),
-  );
+  const persistSettings = useCallback(async (partial: Partial<AppSettings>) => {
+    const updated = { ...settingsRef.current, ...partial };
+    settingsRef.current = updated;
+    try {
+      await saveSettings(updated);
+    } catch (error) {
+      console.error('Error saving pomodoro settings:', error);
+    }
+  }, []);
 
   const applyStageSelection = useCallback(
     (availableStages: Stage[]) => {
@@ -160,20 +185,34 @@ const PomodoroScreen = () => {
     [preferredStageId, routeParams?.preselectedStage],
   );
 
-  useEffect(() => {
-    const fetchStages = async () => {
-      try {
-        const fetchedStages = await getStages();
-        const typedStages = (Array.isArray(fetchedStages) ? fetchedStages : []) as Stage[];
-        setStages(typedStages);
-        applyStageSelection(typedStages);
-      } catch (error) {
-        console.error('Error fetching stages:', error);
-        Alert.alert('Erreur', 'Impossible de charger les stages.');
-      }
-    };
-    fetchStages();
-  }, [routeParams?.preselectedStage, applyStageSelection]);
+  const refreshStages = useCallback(async () => {
+    try {
+      const fetchedStages = await getStages();
+      const typedStages = (Array.isArray(fetchedStages) ? fetchedStages : []) as Stage[];
+      setStages(typedStages);
+      applyStageSelection(typedStages);
+    } catch (error) {
+      console.error('Error fetching stages:', error);
+      Alert.alert('Erreur', 'Impossible de charger les stages.');
+    }
+  }, [applyStageSelection]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isSubscribed = true;
+      const run = async () => {
+        await loadAndApplySettings();
+        if (!isSubscribed) {
+          return;
+        }
+        await refreshStages();
+      };
+      run();
+      return () => {
+        isSubscribed = false;
+      };
+    }, [loadAndApplySettings, refreshStages]),
+  );
 
   useEffect(() => {
     if (stages.length > 0) {
@@ -184,6 +223,9 @@ const PomodoroScreen = () => {
   useEffect(() => {
     if (routeParams?.preselectedCategory) {
       setCategorie(routeParams.preselectedCategory);
+    }
+    if (routeParams?.preselectedSubCategory) {
+      setSubCategory(routeParams.preselectedSubCategory);
     }
     if (routeParams?.autoStart) {
       setShouldAutoStart(true);
@@ -196,7 +238,13 @@ const PomodoroScreen = () => {
     } else {
       setLinkedTaskCardId(undefined);
     }
-  }, [routeParams?.preselectedCategory, routeParams?.autoStart, routeParams?.initialDescription, routeParams?.taskCardId]);
+  }, [
+    routeParams?.preselectedCategory,
+    routeParams?.preselectedSubCategory,
+    routeParams?.autoStart,
+    routeParams?.initialDescription,
+    routeParams?.taskCardId,
+  ]);
 
   useEffect(() => {
     if (isActive) {
@@ -212,17 +260,16 @@ const PomodoroScreen = () => {
           const wasWorkSession = isWorkSession;
 
           if (wasWorkSession && selectedStage) {
-            const entryData: Record<string, any> = {
+            const entryData = {
               dureeSecondes: workDuration * 60,
               categorie,
+              subCategorie: subCategory,
               description,
               date: new Date(),
               stageId: selectedStage,
-              type: 'pomodoro',
+              type: 'pomodoro' as const,
+              ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
             };
-            if (linkedTaskCardId) {
-              entryData.taskCardId = linkedTaskCardId;
-            }
             addEntreeTemps(entryData)
               .then(() => {
                 Alert.alert('Session terminée', 'Votre session de travail a été enregistrée.');
@@ -300,10 +347,12 @@ const PomodoroScreen = () => {
 
   const toggleTimer = () => {
     setIsActive((prev) => {
-      if (prev) {
+      const next = !prev;
+      if (!next) {
+        // Pause: remember progress but keep current phase intact
         setHasElapsedCurrentSession(true);
       }
-      return !prev;
+      return next;
     });
   };
 
@@ -319,7 +368,7 @@ const PomodoroScreen = () => {
     if (!Number.isNaN(parsed)) {
       const clamped = clampDuration(parsed);
       setWorkDuration(clamped);
-      if (!isActive) {
+      if (!isActive && !hasElapsedCurrentSession) {
         setHasElapsedCurrentSession(false);
       }
       if (String(clamped) !== sanitized) {
@@ -338,7 +387,7 @@ const PomodoroScreen = () => {
     if (!Number.isNaN(parsed)) {
       const clamped = clampDuration(parsed);
       setBreakDuration(clamped);
-      if (!isActive) {
+      if (!isActive && !hasElapsedCurrentSession) {
         setHasElapsedCurrentSession(false);
       }
       if (String(clamped) !== sanitized) {
@@ -356,6 +405,7 @@ const PomodoroScreen = () => {
         const clamped = clampDuration(parsed);
         setWorkDuration(clamped);
         setWorkDurationInput(String(clamped));
+        persistSettings({ defaultPomodoroWorkMinutes: clamped });
       }
     }
   };
@@ -369,6 +419,7 @@ const PomodoroScreen = () => {
         const clamped = clampDuration(parsed);
         setBreakDuration(clamped);
         setBreakDurationInput(String(clamped));
+        persistSettings({ defaultPomodoroBreakMinutes: clamped });
       }
     }
   };
@@ -383,7 +434,7 @@ const PomodoroScreen = () => {
     if (!Number.isNaN(parsed)) {
       const clamped = clampDuration(parsed);
       setLongBreakDuration(clamped);
-      if (!isActive) {
+      if (!isActive && !hasElapsedCurrentSession) {
         setHasElapsedCurrentSession(false);
       }
       if (String(clamped) !== sanitized) {
@@ -401,6 +452,7 @@ const PomodoroScreen = () => {
         const clamped = clampDuration(parsed);
         setLongBreakDuration(clamped);
         setLongBreakDurationInput(String(clamped));
+        persistSettings({ defaultPomodoroLongBreakMinutes: clamped });
       }
     }
   };
@@ -443,17 +495,16 @@ const PomodoroScreen = () => {
 
     if (effectiveSeconds > 0) {
       try {
-        const entryData: Record<string, any> = {
+        const entryData = {
           dureeSecondes: effectiveSeconds,
           categorie,
+          subCategorie: subCategory,
           description,
           date: new Date(),
           stageId: selectedStage,
-          type: 'pomodoro-stop',
+          type: 'pomodoro-stop' as const,
+          ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
         };
-        if (linkedTaskCardId) {
-          entryData.taskCardId = linkedTaskCardId;
-        }
         await addEntreeTemps(entryData);
         Alert.alert('Temps enregistré', 'La durée écoulée a été ajoutée.');
       } catch (error) {
@@ -475,17 +526,16 @@ const PomodoroScreen = () => {
       return;
     }
     try {
-      const entryData: Record<string, any> = {
+      const entryData = {
         dureeSecondes: elapsedSeconds,
         categorie,
+        subCategorie: subCategory,
         description,
         date: new Date(),
         stageId: selectedStage,
-        type: 'pomodoro',
+        type: 'pomodoro' as const,
+        ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
       };
-      if (linkedTaskCardId) {
-        entryData.taskCardId = linkedTaskCardId;
-      }
       await addEntreeTemps(entryData);
       Alert.alert('Session enregistrée', 'La durée écoulée a été ajoutée à votre suivi.');
       resetTimer();
@@ -519,8 +569,7 @@ const PomodoroScreen = () => {
   const remainingSeconds = minutes * 60 + seconds;
   const progressRatio = Math.min(1, Math.max(0, (totalPhaseSeconds - remainingSeconds) / totalPhaseSeconds));
   const completedForDisplay = Math.min(completedSessions, TOTAL_SESSIONS);
-  const canLogPausedWork =
-    !isActive && isWorkSession && (minutes !== workDuration || seconds !== 0) && workDuration > 0;
+  const canLogPausedWork = !isActive && isWorkSession && hasElapsedCurrentSession && workDuration > 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -614,6 +663,13 @@ const PomodoroScreen = () => {
             onValueChange={(value) => setCategorie(value)}
             options={categoryOptions}
             disabled
+          />
+          <SelectInput
+            value={subCategory}
+            onValueChange={(value) => setSubCategory(value as SubCategoryKey)}
+            options={subCategoryOptions}
+            disabled={isActive}
+            placeholder="Sous-catégorie"
           />
           <TextInput
             style={styles.input}

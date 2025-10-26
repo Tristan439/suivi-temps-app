@@ -17,7 +17,7 @@ import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navig
 
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
-import { CATEGORY_OPTIONS } from '../constants/categories';
+import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 import { loadSettings } from '../services/settings';
 
@@ -30,6 +30,7 @@ type TimerRouteParams = {
   preselectedCategory?: string;
   preselectedStage?: string;
   autoStart?: boolean;
+  preselectedSubCategory?: SubCategoryKey;
 };
 
 const TimerScreen = () => {
@@ -38,6 +39,9 @@ const TimerScreen = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [description, setDescription] = useState('');
   const [categorie, setCategorie] = useState<string>(CATEGORY_OPTIONS[0]?.value ?? '');
+  const [subCategory, setSubCategory] = useState<SubCategoryKey>(
+    SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention',
+  );
   const [stages, setStages] = useState<Stage[]>([]);
   const [selectedStage, setSelectedStage] = useState<string | undefined>();
   const [preferredStageId, setPreferredStageId] = useState<string | undefined>();
@@ -46,6 +50,10 @@ const TimerScreen = () => {
   const routeParams = route.params;
   const categoryOptions = useMemo<SelectOption[]>(
     () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
+    [],
+  );
+  const subCategoryOptions = useMemo<SelectOption[]>(
+    () => SUB_CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
     [],
   );
   const navigation = useNavigation<any>();
@@ -112,10 +120,13 @@ const TimerScreen = () => {
     if (routeParams?.preselectedCategory) {
       setCategorie(routeParams.preselectedCategory);
     }
+    if (routeParams?.preselectedSubCategory) {
+      setSubCategory(routeParams.preselectedSubCategory);
+    }
     if (routeParams?.autoStart) {
       setShouldAutoStart(true);
     }
-  }, [routeParams?.preselectedCategory, routeParams?.autoStart]);
+  }, [routeParams?.preselectedCategory, routeParams?.preselectedSubCategory, routeParams?.autoStart]);
 
   useFocusEffect(
     useCallback(() => {
@@ -187,6 +198,7 @@ const TimerScreen = () => {
       await addEntreeTemps({
         dureeSecondes: time,
         categorie,
+        subCategorie: subCategory,
         description,
         date: new Date(),
         stageId: selectedStage,
@@ -246,6 +258,13 @@ const TimerScreen = () => {
               onValueChange={(value) => setCategorie(value)}
               options={categoryOptions}
               disabled={isRunning}
+            />
+            <SelectInput
+              value={subCategory}
+              onValueChange={(value) => setSubCategory(value as SubCategoryKey)}
+              options={subCategoryOptions}
+              disabled={isRunning}
+              placeholder="Sous-catégorie"
             />
             <TextInput
               style={styles.input}

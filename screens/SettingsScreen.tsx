@@ -1,15 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -28,8 +18,6 @@ interface Stage {
   nom: string;
 }
 
-const clampDuration = (value: number) => Math.min(Math.max(value, 1), 180);
-
 const SettingsScreen = () => {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
@@ -37,10 +25,6 @@ const SettingsScreen = () => {
   const [stages, setStages] = useState<Stage[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
-  const [workDurationInput, setWorkDurationInput] = useState(String(DEFAULT_SETTINGS.defaultPomodoroWorkMinutes));
-  const [breakDurationInput, setBreakDurationInput] = useState(String(DEFAULT_SETTINGS.defaultPomodoroBreakMinutes));
-  const [longBreakDurationInput, setLongBreakDurationInput] = useState(String(DEFAULT_SETTINGS.defaultPomodoroLongBreakMinutes));
-  const [autoStartBreaks, setAutoStartBreaks] = useState(DEFAULT_SETTINGS.autoStartPomodoroBreaks);
   const [defaultStageId, setDefaultStageId] = useState<string | undefined>(DEFAULT_SETTINGS.defaultStageId);
   const [newStageName, setNewStageName] = useState('');
   const [addingStage, setAddingStage] = useState(false);
@@ -51,10 +35,6 @@ const SettingsScreen = () => {
   }, [stages]);
 
   const syncInputsFromSettings = useCallback((nextSettings: AppSettings) => {
-    setWorkDurationInput(String(nextSettings.defaultPomodoroWorkMinutes));
-    setBreakDurationInput(String(nextSettings.defaultPomodoroBreakMinutes));
-    setLongBreakDurationInput(String(nextSettings.defaultPomodoroLongBreakMinutes));
-    setAutoStartBreaks(nextSettings.autoStartPomodoroBreaks);
     setDefaultStageId(nextSettings.defaultStageId);
   }, []);
 
@@ -86,39 +66,17 @@ const SettingsScreen = () => {
     }, [loadData]),
   );
 
-  const handleDurationChange = (setter: (value: string) => void) => (value: string) => {
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setter(sanitized);
-  };
-
-  const parseDuration = (value: string, fallback: number) => {
-    if (value === '') {
-      return fallback;
-    }
-    const parsed = parseInt(value, 10);
-    if (Number.isNaN(parsed)) {
-      return fallback;
-    }
-    return clampDuration(parsed);
-  };
-
   const handleSave = async () => {
     const nextSettings: AppSettings = {
-      defaultPomodoroWorkMinutes: parseDuration(workDurationInput, settings.defaultPomodoroWorkMinutes),
-      defaultPomodoroBreakMinutes: parseDuration(breakDurationInput, settings.defaultPomodoroBreakMinutes),
-      defaultPomodoroLongBreakMinutes: parseDuration(
-        longBreakDurationInput,
-        settings.defaultPomodoroLongBreakMinutes,
-      ),
-      autoStartPomodoroBreaks: autoStartBreaks,
+      ...settings,
       defaultStageId: defaultStageId ? defaultStageId : undefined,
     };
 
-    syncInputsFromSettings(nextSettings);
     setSaving(true);
     try {
       await saveSettings(nextSettings);
       setSettings(nextSettings);
+      syncInputsFromSettings(nextSettings);
       Alert.alert('Succès', 'Paramètres enregistrés.');
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -185,57 +143,6 @@ const SettingsScreen = () => {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Pomodoro</Text>
-          <Text style={styles.cardSubtitle}>Définissez les durées par défaut pour vos sessions.</Text>
-          <View style={styles.durationRow}>
-            <View style={styles.durationField}>
-              <Text style={styles.durationLabel}>Session (min)</Text>
-              <TextInput
-                style={styles.durationInput}
-                value={workDurationInput}
-                onChangeText={handleDurationChange(setWorkDurationInput)}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
-            </View>
-            <View style={styles.durationField}>
-              <Text style={styles.durationLabel}>Pause (min)</Text>
-              <TextInput
-                style={styles.durationInput}
-                value={breakDurationInput}
-                onChangeText={handleDurationChange(setBreakDurationInput)}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
-            </View>
-            <View style={styles.durationField}>
-              <Text style={styles.durationLabel}>Pause longue (min)</Text>
-              <TextInput
-                style={styles.durationInput}
-                value={longBreakDurationInput}
-                onChangeText={handleDurationChange(setLongBreakDurationInput)}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
-            </View>
-          </View>
-          <View style={styles.switchRow}>
-            <View>
-              <Text style={styles.switchLabel}>Auto-démarrer la pause</Text>
-              <Text style={styles.switchDescription}>
-                Lance automatiquement la pause à la fin d&apos;une session de travail.
-              </Text>
-            </View>
-            <Switch
-              value={autoStartBreaks}
-              onValueChange={setAutoStartBreaks}
-              thumbColor={autoStartBreaks ? colors.primary : colors.white}
-              trackColor={{ false: colors.lightGray, true: '#a9c8ff' }}
-            />
-          </View>
-        </View>
-
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Préférences</Text>
           <Text style={styles.cardSubtitle}>
@@ -346,45 +253,6 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: fontSizes.body,
     color: colors.secondary,
-  },
-  durationRow: {
-    flexDirection: 'row',
-    gap: spacing.medium,
-  },
-  durationField: {
-    flex: 1,
-  },
-  durationLabel: {
-    fontSize: fontSizes.body,
-    color: colors.secondary,
-    marginBottom: spacing.small / 2,
-  },
-  durationInput: {
-    borderWidth: 1,
-    borderColor: colors.lightGray,
-    borderRadius: 10,
-    paddingVertical: spacing.small,
-    paddingHorizontal: spacing.medium,
-    backgroundColor: colors.white,
-    fontSize: fontSizes.subtitle,
-    textAlign: 'center',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.medium,
-  },
-  switchLabel: {
-    fontSize: fontSizes.subtitle,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  switchDescription: {
-    fontSize: fontSizes.body,
-    color: colors.secondary,
-    marginTop: spacing.small / 2,
-    maxWidth: 220,
   },
   inputLabel: {
     fontSize: fontSizes.body,

@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth, initializeAuth, type Auth, type Persistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SubCategoryKey } from '../constants/categories';
 
 // IMPORTANT: Replace with your web app's Firebase configuration
 const firebaseConfig = {
@@ -61,6 +62,7 @@ interface EntreeTemps {
   categorie: string;
   type: 'chrono' | 'pomodoro' | 'manuel' | 'pomodoro-stop';
   taskCardId?: string;
+  subCategorie?: SubCategoryKey;
 }
 
 interface Stage {

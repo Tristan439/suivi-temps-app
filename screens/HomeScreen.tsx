@@ -34,9 +34,12 @@ import {
   CATEGORY_OPTIONS,
   CATEGORY_SECTIONS,
   CategorySection,
-  getAdditionalKeysForSection,
   getCategoryLabel,
+  getSubCategoryLabel,
   getSectionForCategory,
+  SUB_CATEGORY_OPTIONS,
+  SUB_CATEGORY_KEYS,
+  SubCategoryKey,
 } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 import { loadSettings } from '../services/settings';
@@ -55,6 +58,7 @@ interface Entree {
   stageId?: string;
   type?: string;
   taskCardId?: string;
+  subCategorie?: SubCategoryKey;
 }
 
 const ensureSelectOptions = (options: SelectOption[], value?: string) => {
@@ -113,6 +117,9 @@ const HomeScreen = () => {
   const [manualMinutes, setManualMinutes] = useState(0);
   const [manualDescription, setManualDescription] = useState('');
   const [manualCategorie, setManualCategorie] = useState<string>(CATEGORY_OPTIONS[0]?.value ?? '');
+  const [manualSubCategory, setManualSubCategory] = useState<SubCategoryKey>(
+    SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention',
+  );
   const [manualDate, setManualDate] = useState<Date>(new Date());
   const [manualDatePickerVisible, setManualDatePickerVisible] = useState(false);
 
@@ -120,6 +127,9 @@ const HomeScreen = () => {
   const [selectedEntry, setSelectedEntry] = useState<Entree | null>(null);
   const [entryDescription, setEntryDescription] = useState('');
   const [entryCategorie, setEntryCategorie] = useState<string>(CATEGORY_OPTIONS[0]?.value ?? '');
+  const [entrySubCategory, setEntrySubCategory] = useState<SubCategoryKey>(
+    SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention',
+  );
   const [entryHours, setEntryHours] = useState(0);
   const [entryMinutes, setEntryMinutes] = useState(0);
   const [entryStage, setEntryStage] = useState<string | undefined>();
@@ -142,14 +152,29 @@ const HomeScreen = () => {
     [],
   );
 
+  const subCategoryOptions = useMemo<SelectOption[]>(
+    () => SUB_CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
+    [],
+  );
+
   const manualCategoryOptions = useMemo(
     () => ensureSelectOptions(categoryOptions, manualCategorie),
     [categoryOptions, manualCategorie],
   );
 
+  const manualSubCategoryOptions = useMemo(
+    () => ensureSelectOptions(subCategoryOptions, manualSubCategory),
+    [subCategoryOptions, manualSubCategory],
+  );
+
   const entryCategoryOptions = useMemo(
     () => ensureSelectOptions(categoryOptions, entryCategorie),
     [categoryOptions, entryCategorie],
+  );
+
+  const entrySubCategoryOptions = useMemo(
+    () => ensureSelectOptions(subCategoryOptions, entrySubCategory),
+    [subCategoryOptions, entrySubCategory],
   );
 
   const monthOptions = useMemo(
@@ -262,6 +287,26 @@ const HomeScreen = () => {
     return map;
   }, [sortedEntries]);
 
+  const subCategoryTotals = useMemo(() => {
+    const totals: Record<string, Record<SubCategoryKey, number>> = {};
+    entrees.forEach((entry) => {
+      if (!entry.categorie) {
+        return;
+      }
+      const maybeSub = entry.subCategorie as SubCategoryKey | undefined;
+      const subKey: SubCategoryKey =
+        maybeSub && SUB_CATEGORY_KEYS.has(maybeSub) ? maybeSub : 'intervention';
+      if (!totals[entry.categorie]) {
+        totals[entry.categorie] = {
+          intervention: 0,
+          evaluation: 0,
+        };
+      }
+      totals[entry.categorie][subKey] += entry.dureeSecondes || 0;
+    });
+    return totals;
+  }, [entrees]);
+
   const unknownEntries = useMemo(
     () => sortedEntries.filter((entry) => !CATEGORY_KEYS.has(entry.categorie)),
     [sortedEntries],
@@ -325,6 +370,7 @@ const HomeScreen = () => {
 
   const openManualModal = (category?: string) => {
     setManualCategorie(category || CATEGORY_OPTIONS[0]?.value || '');
+    setManualSubCategory(SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention');
     setManualHours(0);
     setManualMinutes(0);
     setManualDescription('');
@@ -337,6 +383,7 @@ const HomeScreen = () => {
     setSelectedEntry(null);
     setEntryDescription('');
     setEntryCategorie(CATEGORY_OPTIONS[0]?.value ?? '');
+    setEntrySubCategory(SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention');
     setEntryHours(0);
     setEntryMinutes(0);
     setEntryStage(undefined);
@@ -354,6 +401,10 @@ const HomeScreen = () => {
     setSelectedEntry(entry);
     setEntryDescription(entry.description || '');
     setEntryCategorie(entry.categorie || CATEGORY_OPTIONS[0]?.value || '');
+    const entrySub = entry.subCategorie && SUB_CATEGORY_KEYS.has(entry.subCategorie)
+      ? (entry.subCategorie as SubCategoryKey)
+      : (SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention');
+    setEntrySubCategory(entrySub as SubCategoryKey);
     setEntryHours(hours);
     setEntryMinutes(minutes);
     setEntryStage(entry.stageId || selectedStage);
@@ -404,6 +455,7 @@ const HomeScreen = () => {
         dureeSecondes: totalMinutes * 60,
         description: manualDescription,
         categorie: manualCategorie,
+        subCategorie: manualSubCategory,
         date: manualDate,
         stageId: selectedStage,
         type: 'manuel',
@@ -412,6 +464,7 @@ const HomeScreen = () => {
       setManualHours(0);
       setManualMinutes(0);
       setManualDescription('');
+      setManualSubCategory(SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention');
       setManualDate(new Date());
       setManualDatePickerVisible(false);
       fetchData();
@@ -442,6 +495,7 @@ const HomeScreen = () => {
       await updateEntreeTemps(selectedEntry.id, {
         description: entryDescription,
         categorie: entryCategorie,
+        subCategorie: entrySubCategory,
         stageId: stageIdToSave,
         dureeSecondes: totalMinutes * 60,
         date: entryDate,
@@ -496,18 +550,15 @@ const HomeScreen = () => {
         </View>
         <View style={styles.historyMeta}>
           <Text style={styles.historyDuration}>{secondsToHuman(entry.dureeSecondes)}</Text>
-          <Text style={styles.historyCategory}>{getCategoryLabel(entry.categorie)}</Text>
+          <Text style={styles.historyCategory}>
+            {getCategoryLabel(entry.categorie)} • {getSubCategoryLabel(entry.subCategorie)}
+          </Text>
         </View>
       </TouchableOpacity>
     ));
   };
 
   const renderSection = (section: CategorySection) => {
-    const extraKeys = getAdditionalKeysForSection(section.id);
-    const sectionTotal = [...section.rows.map((row) => row.key), ...extraKeys].reduce(
-      (acc, key) => acc + (cumuls[key] || 0),
-      0,
-    );
     const isExpanded = expandedSections[section.id] ?? true;
 
     return (
@@ -524,41 +575,66 @@ const HomeScreen = () => {
         </View>
 
         <View style={styles.sectionRows}>
-          {section.rows.map((row) => (
-            <View key={row.key} style={styles.sectionRow}>
-              <View style={styles.rowInfo}>
-                <View style={styles.rowHeader}>
-                  <Text style={styles.rowLabel}>{row.label}</Text>
-                  <View style={styles.rowTotalBadge}>
-                    <Ionicons name="time-outline" size={14} color={colors.primary} />
-                    <Text style={styles.rowTotalText}>{secondsToHuman(cumuls[row.key] || 0)}</Text>
+          {section.rows.map((row) => {
+            const categorySubTotals =
+              subCategoryTotals[row.key] ??
+              ({
+                intervention: 0,
+                evaluation: 0,
+              } as Record<SubCategoryKey, number>);
+            const interventionSeconds = categorySubTotals.intervention ?? 0;
+            const evaluationSeconds = categorySubTotals.evaluation ?? 0;
+
+            return (
+              <View key={row.key} style={styles.sectionRow}>
+                <View style={styles.rowInfo}>
+                  <View style={styles.rowHeader}>
+                    <Text style={styles.rowLabel}>{row.label}</Text>
+                    <View style={styles.rowActionsTop}>
+                      <TouchableOpacity
+                        style={[styles.iconButton, styles.timerButton]}
+                        onPress={() => handleStartTimer(row.key)}
+                      >
+                        <Ionicons name="timer-outline" size={18} color={colors.white} />
+                      </TouchableOpacity>
+                      {section.id === 'autres' && (
+                        <TouchableOpacity
+                          style={[styles.iconButton, styles.pomodoroButton]}
+                          onPress={handleStartPomodoro}
+                        >
+                          <Ionicons name="flame-outline" size={18} color={colors.white} />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={[styles.iconButton, styles.manualButton]}
+                        onPress={() => openManualModal(row.key)}
+                      >
+                        <Ionicons name="add-outline" size={18} color={colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={styles.rowSubTotals}>
+                    <View style={[styles.rowSubBadge, styles.rowSubBadgeIntervention]}>
+                      <Text style={styles.rowSubBadgeLabel}>Intervention</Text>
+                      <Text style={styles.rowSubBadgeValue}>
+                        {secondsToHuman(interventionSeconds)}
+                      </Text>
+                    </View>
+                    <View style={[styles.rowSubBadge, styles.rowSubBadgeEvaluation]}>
+                      <Text style={[styles.rowSubBadgeLabel, styles.rowSubBadgeEvaluationLabel]}>
+                        Évaluation
+                      </Text>
+                      <Text
+                        style={[styles.rowSubBadgeValue, styles.rowSubBadgeEvaluationValue]}
+                      >
+                        {secondsToHuman(evaluationSeconds)}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-                <View style={styles.rowActions}>
-                  <TouchableOpacity
-                    style={[styles.iconButton, styles.timerButton]}
-                    onPress={() => handleStartTimer(row.key)}
-                  >
-                    <Ionicons name="timer-outline" size={18} color={colors.white} />
-                  </TouchableOpacity>
-                  {section.id === 'autres' && (
-                    <TouchableOpacity
-                      style={[styles.iconButton, styles.pomodoroButton]}
-                      onPress={handleStartPomodoro}
-                    >
-                      <Ionicons name="flame-outline" size={18} color={colors.white} />
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={[styles.iconButton, styles.manualButton]}
-                    onPress={() => openManualModal(row.key)}
-                  >
-                    <Ionicons name="add-outline" size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         {isExpanded && (
@@ -686,9 +762,9 @@ const HomeScreen = () => {
                         <View style={styles.rowInfo}>
                           <View style={styles.rowHeader}>
                             <Text style={styles.rowLabel}>{getCategoryLabel(key)}</Text>
-                            <View style={styles.rowTotalBadge}>
+                            <View style={styles.rowInlineTotal}>
                               <Ionicons name="time-outline" size={14} color={colors.primary} />
-                              <Text style={styles.rowTotalText}>{secondsToHuman(value)}</Text>
+                              <Text style={styles.rowInlineTotalText}>{secondsToHuman(value)}</Text>
                             </View>
                           </View>
                         </View>
@@ -739,6 +815,13 @@ const HomeScreen = () => {
                   options={manualCategoryOptions}
                   onValueChange={setManualCategorie}
                   placeholder="Catégorie"
+                  style={styles.modalSelect}
+                />
+                <SelectInput
+                  value={manualSubCategory}
+                  options={manualSubCategoryOptions}
+                  onValueChange={(value) => setManualSubCategory(value as SubCategoryKey)}
+                  placeholder="Sous-catégorie"
                   style={styles.modalSelect}
                 />
                 <TouchableOpacity
@@ -850,6 +933,13 @@ const HomeScreen = () => {
                   options={entryCategoryOptions}
                   onValueChange={setEntryCategorie}
                   placeholder="Catégorie"
+                  style={styles.modalSelect}
+                />
+                <SelectInput
+                  value={entrySubCategory}
+                  options={entrySubCategoryOptions}
+                  onValueChange={(value) => setEntrySubCategory(value as SubCategoryKey)}
+                  placeholder="Sous-catégorie"
                   style={styles.modalSelect}
                 />
                 <TouchableOpacity
@@ -1086,30 +1176,60 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
   },
-  rowTotalBadge: {
+  rowInlineTotal: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#e7f1ff',
-    paddingVertical: spacing.small / 1.5,
+    gap: spacing.small / 2,
+  },
+  rowInlineTotalText: {
+    fontSize: fontSizes.body,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  rowSubTotals: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.small,
+    marginTop: spacing.small,
+  },
+  rowSubBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.small / 2,
+    paddingVertical: spacing.small / 2,
     paddingHorizontal: spacing.medium,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(64, 123, 255, 0.2)',
-    alignSelf: 'flex-end',
+    borderColor: 'transparent',
   },
-  rowTotalText: {
+  rowSubBadgeLabel: {
+    fontSize: fontSizes.body,
+    fontWeight: '500',
+    color: colors.text,
+  },
+  rowSubBadgeValue: {
     fontSize: fontSizes.body,
     fontWeight: '700',
-    color: colors.primary,
-    flexShrink: 1,
+    color: colors.text,
   },
-  rowActions: {
+  rowSubBadgeIntervention: {
+    backgroundColor: '#e7f1ff',
+    borderColor: 'rgba(64, 123, 255, 0.25)',
+  },
+  rowSubBadgeEvaluation: {
+    backgroundColor: '#e6f4ea',
+    borderColor: 'rgba(47, 158, 68, 0.25)',
+  },
+  rowSubBadgeEvaluationLabel: {
+    color: '#2F9E44',
+  },
+  rowSubBadgeEvaluationValue: {
+    color: '#2F9E44',
+  },
+  rowActionsTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.small,
-    marginTop: spacing.small,
-    alignSelf: 'flex-end',
   },
   timerButton: {
     backgroundColor: colors.primary,
