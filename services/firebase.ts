@@ -47,7 +47,7 @@ interface EntreeTemps {
   dureeSecondes: number;
   description?: string;
   categorie: string;
-  type: 'chrono' | 'pomodoro' | 'manuel';
+  type: 'chrono' | 'pomodoro' | 'manuel' | 'pomodoro-stop';
 }
 
 interface Stage {

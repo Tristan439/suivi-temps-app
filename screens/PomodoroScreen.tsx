@@ -156,6 +156,42 @@ const PomodoroScreen = () => {
     setIsActive((prev) => !prev);
   };
 
+  const handleStopEarly = async () => {
+    if (!selectedStage) {
+      Alert.alert('Stage requis', 'Veuillez sélectionner un stage.');
+      return;
+    }
+
+    if (!isActive && minutes === WORK_MINUTES && seconds === 0) {
+      return;
+    }
+
+    const elapsedSeconds = isWorkSession
+      ? WORK_MINUTES * 60 - (minutes * 60 + seconds)
+      : BREAK_MINUTES * 60 - (minutes * 60 + seconds);
+
+    const effectiveSeconds = elapsedSeconds > 0 ? elapsedSeconds : 0;
+
+    if (effectiveSeconds > 0) {
+      try {
+        await addEntreeTemps({
+          dureeSecondes: effectiveSeconds,
+          categorie,
+          description,
+          date: new Date(),
+          stageId: selectedStage,
+          type: 'pomodoro-stop',
+        });
+        Alert.alert('Temps enregistré', 'La durée écoulée a été ajoutée.');
+      } catch (error) {
+        console.error('Error saving pomodoro entry:', error);
+        Alert.alert('Erreur', "Impossible d'enregistrer le temps.");
+      }
+    }
+
+    resetTimer();
+  };
+
   const resetTimer = () => {
     setIsActive(false);
     setIsWorkSession(true);
@@ -214,6 +250,10 @@ const PomodoroScreen = () => {
             >
               <Ionicons name={isActive ? 'pause' : 'play'} size={20} color={colors.white} />
               <Text style={styles.heroButtonText}>{isActive ? 'Pause' : 'Start'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.heroButton, styles.heroStopButton]} onPress={handleStopEarly}>
+              <Ionicons name="stop" size={18} color={colors.white} />
+              <Text style={styles.heroButtonText}>Stop</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.heroButton, styles.heroResetButton]} onPress={resetTimer}>
               <Ionicons name="refresh" size={18} color={colors.white} />
@@ -367,6 +407,9 @@ const styles = StyleSheet.create({
   },
   heroPauseButton: {
     backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  heroStopButton: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   heroResetButton: {
     backgroundColor: 'rgba(255,255,255,0.2)',

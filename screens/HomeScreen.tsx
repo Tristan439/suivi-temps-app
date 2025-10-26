@@ -11,10 +11,14 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Picker } from '@react-native-picker/picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import {
   addEntreeTemps,
@@ -78,19 +82,18 @@ const secondsToHuman = (seconds = 0) => {
   return `${hours} h ${minutes.toString().padStart(2, '0')} min`;
 };
 
-const minutesInputToSeconds = (value: string) => {
-  const normalized = value.replace(',', '.');
-  const parsed = parseFloat(normalized);
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    return null;
-  }
-  return Math.round(parsed * 60);
-};
-
 const formatEntryTimestamp = (value: any) => {
   const date = toDate(value);
   return `${date.toLocaleDateString()} • ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 };
+
+const formatDateDisplay = (date: Date) =>
+  date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 
 const HomeScreen = () => {
   const navigation = useNavigation<any>();
@@ -103,17 +106,23 @@ const HomeScreen = () => {
   const [loading, setLoading] = useState(true);
 
   const [manualModalVisible, setManualModalVisible] = useState(false);
-  const [manualDuree, setManualDuree] = useState('');
+  const [manualHours, setManualHours] = useState(0);
+  const [manualMinutes, setManualMinutes] = useState(0);
   const [manualDescription, setManualDescription] = useState('');
   const [manualCategorie, setManualCategorie] = useState<string>(CATEGORY_OPTIONS[0]?.value ?? '');
+  const [manualDate, setManualDate] = useState<Date>(new Date());
+  const [manualDatePickerVisible, setManualDatePickerVisible] = useState(false);
 
   const [entryModalVisible, setEntryModalVisible] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<Entree | null>(null);
   const [entryDescription, setEntryDescription] = useState('');
   const [entryCategorie, setEntryCategorie] = useState<string>(CATEGORY_OPTIONS[0]?.value ?? '');
-  const [entryDuree, setEntryDuree] = useState('');
+  const [entryHours, setEntryHours] = useState(0);
+  const [entryMinutes, setEntryMinutes] = useState(0);
   const [entryStage, setEntryStage] = useState<string | undefined>();
   const [entryDateInfo, setEntryDateInfo] = useState('');
+  const [entryDate, setEntryDate] = useState<Date>(new Date());
+  const [entryDatePickerVisible, setEntryDatePickerVisible] = useState(false);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     supervision: true,
@@ -223,6 +232,27 @@ const HomeScreen = () => {
     }));
   };
 
+  const handleManualDateChange = (_event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setManualDatePickerVisible(false);
+    }
+    if (selectedDate) {
+      setManualDate(selectedDate);
+    }
+  };
+
+  const handleEntryDateChange = (_event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setEntryDatePickerVisible(false);
+    }
+    if (selectedDate) {
+      setEntryDate(selectedDate);
+      setEntryDateInfo(
+        `${formatDateDisplay(selectedDate)} • ${selectedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      );
+    }
+  };
+
   const changeMonth = (increment: number) => {
     setDate((prevDate) => {
       const newDate = new Date(prevDate);
@@ -233,8 +263,10 @@ const HomeScreen = () => {
 
   const openManualModal = (category?: string) => {
     setManualCategorie(category || CATEGORY_OPTIONS[0]?.value || '');
-    setManualDuree('');
+    setManualHours(0);
+    setManualMinutes(0);
     setManualDescription('');
+    setManualDate(new Date());
     setManualModalVisible(true);
   };
 
@@ -243,24 +275,30 @@ const HomeScreen = () => {
     setSelectedEntry(null);
     setEntryDescription('');
     setEntryCategorie(CATEGORY_OPTIONS[0]?.value ?? '');
-    setEntryDuree('');
+    setEntryHours(0);
+    setEntryMinutes(0);
     setEntryStage(undefined);
     setEntryDateInfo('');
+    setEntryDate(new Date());
+    setEntryDatePickerVisible(false);
   };
 
   const openEntryModal = (entry: Entree) => {
-    const minutesValue = entry.dureeSecondes ? entry.dureeSecondes / 60 : 0;
-    const formattedMinutes = Number.isInteger(minutesValue)
-      ? String(minutesValue)
-      : minutesValue.toFixed(2);
+    const totalMinutes = entry.dureeSecondes ? Math.round(entry.dureeSecondes / 60) : 0;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
     const entryDate = toDate(entry.date);
 
     setSelectedEntry(entry);
     setEntryDescription(entry.description || '');
     setEntryCategorie(entry.categorie || CATEGORY_OPTIONS[0]?.value || '');
-    setEntryDuree(formattedMinutes);
+    setEntryHours(hours);
+    setEntryMinutes(minutes);
     setEntryStage(entry.stageId || selectedStage);
-    setEntryDateInfo(`${entryDate.toLocaleDateString()} à ${entryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    setEntryDateInfo(
+      `${formatDateDisplay(entryDate)} • ${entryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    );
+    setEntryDate(entryDate);
     setEntryModalVisible(true);
   };
 
@@ -289,9 +327,9 @@ const HomeScreen = () => {
   };
 
   const handleAjoutManuel = async () => {
-    const dureeSecondes = minutesInputToSeconds(manualDuree);
-    if (!dureeSecondes) {
-      Alert.alert('Erreur', 'Veuillez entrer une durée valide en minutes.');
+    const totalMinutes = manualHours * 60 + manualMinutes;
+    if (totalMinutes <= 0) {
+      Alert.alert('Erreur', 'Veuillez sélectionner une durée valide.');
       return;
     }
     if (!selectedStage) {
@@ -301,16 +339,19 @@ const HomeScreen = () => {
 
     try {
       await addEntreeTemps({
-        dureeSecondes,
+        dureeSecondes: totalMinutes * 60,
         description: manualDescription,
         categorie: manualCategorie,
-        date: new Date(),
+        date: manualDate,
         stageId: selectedStage,
         type: 'manuel',
       });
       setManualModalVisible(false);
-      setManualDuree('');
+      setManualHours(0);
+      setManualMinutes(0);
       setManualDescription('');
+      setManualDate(new Date());
+      setManualDatePickerVisible(false);
       fetchData();
     } catch (error) {
       console.error('Error adding manual entry:', error);
@@ -323,9 +364,9 @@ const HomeScreen = () => {
       return;
     }
 
-    const dureeSecondes = minutesInputToSeconds(entryDuree);
-    if (!dureeSecondes) {
-      Alert.alert('Erreur', 'Veuillez entrer une durée valide en minutes.');
+    const totalMinutes = entryHours * 60 + entryMinutes;
+    if (totalMinutes <= 0) {
+      Alert.alert('Erreur', 'Veuillez sélectionner une durée valide.');
       return;
     }
 
@@ -340,7 +381,8 @@ const HomeScreen = () => {
         description: entryDescription,
         categorie: entryCategorie,
         stageId: stageIdToSave,
-        dureeSecondes,
+        dureeSecondes: totalMinutes * 60,
+        date: entryDate,
       });
       closeEntryModal();
       fetchData();
@@ -472,18 +514,22 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {loading && !manualModalVisible && !entryModalVisible ? (
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.headerCard}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {loading && !manualModalVisible && !entryModalVisible ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.headerCard}>
               <Text style={styles.headerLabel}>Stage</Text>
               <SelectInput
                 value={selectedStage}
@@ -548,9 +594,9 @@ const HomeScreen = () => {
             <Ionicons name="add-circle-outline" size={20} color={colors.white} />
             <Text style={styles.primaryButtonText}>Ajouter une entrée manuelle</Text>
           </TouchableOpacity>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      )}
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        )}
 
       <Modal
         animationType="slide"
@@ -563,6 +609,7 @@ const HomeScreen = () => {
           onPress={() => {
             Keyboard.dismiss();
             setManualModalVisible(false);
+            setManualDatePickerVisible(false);
           }}
         >
           <View style={styles.centeredView}>
@@ -573,31 +620,81 @@ const HomeScreen = () => {
                   value={manualCategorie}
                   options={manualCategoryOptions}
                   onValueChange={setManualCategorie}
-              placeholder="Catégorie"
-              style={styles.modalSelect}
-            />
-            <TextInput
-              placeholder="Durée en minutes"
-              value={manualDuree}
-              onChangeText={setManualDuree}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Description"
-              value={manualDescription}
-              onChangeText={setManualDescription}
-              style={styles.input}
-            />
-            <TouchableOpacity style={styles.primaryButton} onPress={handleAjoutManuel}>
-              <Text style={styles.primaryButtonText}>Enregistrer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.secondaryButton]}
-              onPress={() => setManualModalVisible(false)}
-            >
-              <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
-            </TouchableOpacity>
+                  placeholder="Catégorie"
+                  style={styles.modalSelect}
+                />
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setManualDatePickerVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="calendar" size={18} color={colors.primary} />
+                  <Text style={styles.dateButtonText}>{formatDateDisplay(manualDate)}</Text>
+                </TouchableOpacity>
+                {manualDatePickerVisible && (
+                  <View style={styles.datePickerWrapper}>
+                    <DateTimePicker
+                      value={manualDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={handleManualDateChange}
+                    />
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={styles.datePickerClose}
+                        onPress={() => setManualDatePickerVisible(false)}
+                      >
+                        <Text style={styles.datePickerCloseText}>Terminer</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+                <View style={styles.durationPickerContainer}>
+                  <View style={styles.pickerColumn}>
+                    <Text style={styles.pickerLabel}>Heures</Text>
+                    <Picker
+                      selectedValue={manualHours}
+                      onValueChange={(value) => setManualHours(value)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      {Array.from({ length: 24 }).map((_, idx) => (
+                        <Picker.Item key={`manual-hours-${idx}`} label={`${idx}`} value={idx} />
+                      ))}
+                    </Picker>
+                  </View>
+                  <View style={styles.pickerColumn}>
+                    <Text style={styles.pickerLabel}>Minutes</Text>
+                    <Picker
+                      selectedValue={manualMinutes}
+                      onValueChange={(value) => setManualMinutes(value)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      {Array.from({ length: 60 }).map((_, idx) => (
+                        <Picker.Item key={`manual-minutes-${idx}`} label={`${idx}`} value={idx} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                <TextInput
+                  placeholder="Description"
+                  value={manualDescription}
+                  onChangeText={setManualDescription}
+                  style={styles.input}
+                />
+                <TouchableOpacity style={styles.primaryButton} onPress={handleAjoutManuel}>
+                  <Text style={styles.primaryButtonText}>Enregistrer</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.primaryButton, styles.secondaryButton]}
+                  onPress={() => {
+                    setManualModalVisible(false);
+                    setManualDatePickerVisible(false);
+                  }}
+                >
+                  <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
+                </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -625,50 +722,98 @@ const HomeScreen = () => {
                 <SelectInput
                   value={entryStage}
                   onValueChange={setEntryStage}
-              options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
-              placeholder="Sélectionner un stage"
-              style={styles.modalSelect}
-            />
-            <SelectInput
-              value={entryCategorie}
-              options={entryCategoryOptions}
-              onValueChange={setEntryCategorie}
-              placeholder="Catégorie"
-              style={styles.modalSelect}
-            />
-            <TextInput
-              placeholder="Durée en minutes"
-              value={entryDuree}
-              onChangeText={setEntryDuree}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Description"
-              value={entryDescription}
-              onChangeText={setEntryDescription}
-              style={styles.input}
-            />
-            <TouchableOpacity style={styles.primaryButton} onPress={handleUpdateEntry}>
-              <Text style={styles.primaryButtonText}>Enregistrer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.destructiveButton]}
-              onPress={confirmDeleteEntry}
-            >
-              <Text style={styles.primaryButtonText}>Supprimer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.secondaryButton]}
-              onPress={closeEntryModal}
-            >
-              <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
-            </TouchableOpacity>
+                  options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
+                  placeholder="Sélectionner un stage"
+                  style={styles.modalSelect}
+                />
+                <SelectInput
+                  value={entryCategorie}
+                  options={entryCategoryOptions}
+                  onValueChange={setEntryCategorie}
+                  placeholder="Catégorie"
+                  style={styles.modalSelect}
+                />
+                <TouchableOpacity
+                  style={styles.dateButton}
+                  onPress={() => setEntryDatePickerVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="calendar" size={18} color={colors.primary} />
+                  <Text style={styles.dateButtonText}>{formatDateDisplay(entryDate)}</Text>
+                </TouchableOpacity>
+                {entryDatePickerVisible && (
+                  <View style={styles.datePickerWrapper}>
+                    <DateTimePicker
+                      value={entryDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={handleEntryDateChange}
+                    />
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={styles.datePickerClose}
+                        onPress={() => setEntryDatePickerVisible(false)}
+                      >
+                        <Text style={styles.datePickerCloseText}>Terminer</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+                <View style={styles.durationPickerContainer}>
+                  <View style={styles.pickerColumn}>
+                    <Text style={styles.pickerLabel}>Heures</Text>
+                    <Picker
+                      selectedValue={entryHours}
+                      onValueChange={(value) => setEntryHours(value)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      {Array.from({ length: 24 }).map((_, idx) => (
+                        <Picker.Item key={`entry-hours-${idx}`} label={`${idx}`} value={idx} />
+                      ))}
+                    </Picker>
+                  </View>
+                  <View style={styles.pickerColumn}>
+                    <Text style={styles.pickerLabel}>Minutes</Text>
+                    <Picker
+                      selectedValue={entryMinutes}
+                      onValueChange={(value) => setEntryMinutes(value)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      {Array.from({ length: 60 }).map((_, idx) => (
+                        <Picker.Item key={`entry-minutes-${idx}`} label={`${idx}`} value={idx} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                <TextInput
+                  placeholder="Description"
+                  value={entryDescription}
+                  onChangeText={setEntryDescription}
+                  style={styles.input}
+                />
+                <TouchableOpacity style={styles.primaryButton} onPress={handleUpdateEntry}>
+                  <Text style={styles.primaryButtonText}>Enregistrer</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.primaryButton, styles.destructiveButton]}
+                  onPress={confirmDeleteEntry}
+                >
+                  <Text style={styles.primaryButtonText}>Supprimer</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.primaryButton, styles.secondaryButton]}
+                  onPress={closeEntryModal}
+                >
+                  <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
+                </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -951,6 +1096,58 @@ const styles = StyleSheet.create({
   },
   modalSelect: {
     marginBottom: spacing.small,
+  },
+  durationPickerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.medium,
+    marginBottom: spacing.medium,
+  },
+  pickerColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  pickerLabel: {
+    fontSize: fontSizes.body,
+    color: colors.secondary,
+    marginBottom: spacing.small,
+  },
+  picker: {
+    width: '100%',
+    height: 150,
+  },
+  pickerItem: {
+    fontSize: fontSizes.title,
+  },
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.small,
+    backgroundColor: colors.background,
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+    borderRadius: 12,
+  },
+  dateButtonText: {
+    fontSize: fontSizes.body,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  datePickerWrapper: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingVertical: spacing.small,
+    marginBottom: spacing.small,
+  },
+  datePickerClose: {
+    alignSelf: 'flex-end',
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+  },
+  datePickerCloseText: {
+    fontSize: fontSizes.body,
+    color: colors.primary,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,
