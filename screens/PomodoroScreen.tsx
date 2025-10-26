@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -8,25 +9,28 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
+import { CATEGORY_OPTIONS } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 
 const WORK_MINUTES = 25;
 const BREAK_MINUTES = 5;
+const TOTAL_SESSIONS = 4;
 
 interface Stage {
   id: string;
   nom: string;
 }
 
-const categorieOptions: SelectOption[] = [
-  { label: 'Travail', value: 'Travail' },
-  { label: 'Supervision', value: 'Supervision' },
-  { label: 'Contact client', value: 'Contact client' },
-  { label: 'Autres', value: 'Autres' },
-];
+type PomodoroRouteParams = {
+  preselectedStage?: string;
+  preselectedCategory?: string;
+  autoStart?: boolean;
+};
 
 const PomodoroScreen = () => {
   const [minutes, setMinutes] = useState(WORK_MINUTES);
@@ -34,10 +38,25 @@ const PomodoroScreen = () => {
   const [isActive, setIsActive] = useState(false);
   const [isWorkSession, setIsWorkSession] = useState(true);
   const [description, setDescription] = useState('Session Pomodoro');
-  const [categorie, setCategorie] = useState('Travail');
+  const [categorie, setCategorie] = useState<string>(
+    CATEGORY_OPTIONS.find((option) => option.value === 'autres_pomodoro')?.value ||
+      CATEGORY_OPTIONS[0]?.value ||
+      '',
+  );
   const [stages, setStages] = useState<Stage[]>([]);
   const [selectedStage, setSelectedStage] = useState<string | undefined>();
+  const [completedSessions, setCompletedSessions] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const categoryOptions = useMemo<SelectOption[]>(
+    () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
+    [],
+  );
+
+  const route = useRoute<RouteProp<Record<string, PomodoroRouteParams | undefined>, string>>();
+  const navigation = useNavigation<any>();
+  const routeParams = route.params;
+  const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
 
   useEffect(() => {
     const fetchStages = async () => {
@@ -45,7 +64,14 @@ const PomodoroScreen = () => {
         const fetchedStages = await getStages();
         setStages(fetchedStages as Stage[]);
         if (fetchedStages.length > 0) {
-          setSelectedStage(fetchedStages[0].id);
+          if (
+            routeParams?.preselectedStage &&
+            fetchedStages.some((stage) => stage.id === routeParams.preselectedStage)
+          ) {
+            setSelectedStage(routeParams.preselectedStage);
+          } else {
+            setSelectedStage(fetchedStages[0].id);
+          }
         }
       } catch (error) {
         console.error('Error fetching stages:', error);
@@ -53,7 +79,16 @@ const PomodoroScreen = () => {
       }
     };
     fetchStages();
-  }, []);
+  }, [routeParams?.preselectedStage]);
+
+  useEffect(() => {
+    if (routeParams?.preselectedCategory) {
+      setCategorie(routeParams.preselectedCategory);
+    }
+    if (routeParams?.autoStart) {
+      setShouldAutoStart(true);
+    }
+  }, [routeParams?.preselectedCategory, routeParams?.autoStart]);
 
   useEffect(() => {
     if (isActive) {
@@ -80,6 +115,7 @@ const PomodoroScreen = () => {
                 console.error('Error saving pomodoro session:', error);
                 Alert.alert('Erreur', "Impossible d'enregistrer la session.");
               });
+            setCompletedSessions((prev) => prev + 1);
           }
 
           setMinutes(isWorkSession ? BREAK_MINUTES : WORK_MINUTES);
@@ -102,6 +138,20 @@ const PomodoroScreen = () => {
     };
   }, [isActive, seconds, minutes, isWorkSession, categorie, description, selectedStage]);
 
+  const startSession = useCallback(() => {
+    setIsActive(true);
+  }, []);
+
+  useEffect(() => {
+    if (shouldAutoStart && selectedStage) {
+      startSession();
+      setShouldAutoStart(false);
+      if (routeParams?.autoStart) {
+        navigation.setParams({ ...routeParams, autoStart: false });
+      }
+    }
+  }, [shouldAutoStart, selectedStage, startSession, navigation, routeParams]);
+
   const toggleTimer = () => {
     setIsActive((prev) => !prev);
   };
@@ -111,29 +161,69 @@ const PomodoroScreen = () => {
     setIsWorkSession(true);
     setMinutes(WORK_MINUTES);
     setSeconds(0);
+    setCompletedSessions(0);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
   };
 
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const totalPhaseSeconds = (isWorkSession ? WORK_MINUTES : BREAK_MINUTES) * 60;
+  const remainingSeconds = minutes * 60 + seconds;
+  const progressRatio = Math.min(1, Math.max(0, (totalPhaseSeconds - remainingSeconds) / totalPhaseSeconds));
+  const completedForDisplay = Math.min(completedSessions, TOTAL_SESSIONS);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View
-          style={[
-            styles.timerCard,
-            isWorkSession ? styles.workBackground : styles.breakBackground,
-          ]}
-        >
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={[styles.heroCard, isWorkSession ? styles.heroWork : styles.heroBreak]}>
+          <View style={styles.heroHeader}>
+            <View style={styles.heroIcon}>
+              <Ionicons name="flame" size={30} color={colors.white} />
+            </View>
+            <View>
+              <Text style={styles.heroTitle}>Pomodoro</Text>
+              <Text style={styles.heroSubtitle}>
+                {isActive ? (isWorkSession ? 'Session de travail' : 'Pause en cours') : 'Prêt à démarrer'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progressRatio * 100}%` }]} />
+          </View>
+
           <Text style={styles.timerText}>{formattedTime}</Text>
-          <Text style={styles.sessionText}>
-            {isWorkSession ? 'Session de travail' : 'Pause'}
-          </Text>
+
+          <View style={styles.sessionDots}>
+            {Array.from({ length: TOTAL_SESSIONS }).map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.sessionDot,
+                  index < completedForDisplay ? styles.sessionDotActive : undefined,
+                ]}
+              />
+            ))}
+          </View>
+
+          <View style={styles.heroActions}>
+            <TouchableOpacity
+              style={[styles.heroButton, isActive ? styles.heroPauseButton : styles.heroStartButton]}
+              onPress={toggleTimer}
+            >
+              <Ionicons name={isActive ? 'pause' : 'play'} size={20} color={colors.white} />
+              <Text style={styles.heroButtonText}>{isActive ? 'Pause' : 'Start'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.heroButton, styles.heroResetButton]} onPress={resetTimer}>
+              <Ionicons name="refresh" size={18} color={colors.white} />
+              <Text style={styles.heroButtonText}>Reset</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={styles.controlsContainer}>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Contexte</Text>
           <SelectInput
             value={selectedStage}
             onValueChange={setSelectedStage}
@@ -143,31 +233,38 @@ const PomodoroScreen = () => {
           />
           <SelectInput
             value={categorie}
-            onValueChange={setCategorie}
-            options={categorieOptions}
-            disabled={isActive}
+            onValueChange={(value) => setCategorie(value)}
+            options={categoryOptions}
+            disabled
           />
           <TextInput
             style={styles.input}
-            placeholder="Description"
+            placeholder="Description de la session"
             value={description}
             onChangeText={setDescription}
             editable={!isActive}
           />
         </View>
 
-        <View style={styles.buttonsContainer}>
-          <TouchableOpacity
-            style={[styles.button, styles.startPauseButton]}
-            onPress={toggleTimer}
-          >
-            <Text style={styles.buttonText}>{isActive ? 'Pause' : 'Start'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.button, styles.resetButton]} onPress={resetTimer}>
-            <Text style={styles.buttonText}>Reset</Text>
-          </TouchableOpacity>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Résumé</Text>
+          <View style={styles.statRow}>
+            <Ionicons name="flame-outline" size={18} color={colors.primary} />
+            <Text style={styles.statLabel}>Durée des sessions</Text>
+            <Text style={styles.statValue}>{WORK_MINUTES} min</Text>
+          </View>
+          <View style={styles.statRow}>
+            <Ionicons name="leaf-outline" size={18} color={colors.secondary} />
+            <Text style={styles.statLabel}>Durée des pauses</Text>
+            <Text style={styles.statValue}>{BREAK_MINUTES} min</Text>
+          </View>
+          <View style={styles.statRow}>
+            <Ionicons name="trail-sign-outline" size={18} color={colors.secondary} />
+            <Text style={styles.statLabel}>Sessions complétées</Text>
+            <Text style={styles.statValue}>{completedSessions}</Text>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -177,42 +274,123 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
-    flex: 1,
+  scrollContent: {
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
-    justifyContent: 'space-between',
+    gap: spacing.large,
   },
-  timerCard: {
-    borderRadius: 16,
+  heroCard: {
+    borderRadius: 24,
     paddingVertical: spacing.large,
     paddingHorizontal: spacing.large,
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 6,
+    gap: spacing.large,
   },
-  workBackground: {
-    backgroundColor: colors.primary,
+  heroWork: {
+    backgroundColor: '#f85a7a',
   },
-  breakBackground: {
-    backgroundColor: colors.accent,
+  heroBreak: {
+    backgroundColor: '#2f9e44',
   },
-  timerText: {
-    fontSize: 72,
+  heroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.medium,
+  },
+  heroIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroTitle: {
+    fontSize: fontSizes.title + 6,
     fontWeight: '700',
     color: colors.white,
   },
-  sessionText: {
-    fontSize: fontSizes.title,
-    color: colors.white,
-    marginTop: spacing.small,
+  heroSubtitle: {
+    fontSize: fontSizes.body,
+    color: 'rgba(255,255,255,0.85)',
   },
-  controlsContainer: {
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.white,
+  },
+  timerText: {
+    fontSize: 80,
+    fontWeight: '700',
+    color: colors.white,
+    textAlign: 'center',
+  },
+  sessionDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.small,
+  },
+  sessionDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  sessionDotActive: {
+    backgroundColor: colors.white,
+  },
+  heroActions: {
+    flexDirection: 'row',
     gap: spacing.medium,
+  },
+  heroButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.small,
+    paddingVertical: spacing.medium,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  heroStartButton: {
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  heroPauseButton: {
+    backgroundColor: 'rgba(255,255,255,0.35)',
+  },
+  heroResetButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  heroButtonText: {
+    color: colors.white,
+    fontSize: fontSizes.subtitle,
+    fontWeight: '600',
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    padding: spacing.large,
+    gap: spacing.medium,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  cardTitle: {
+    fontSize: fontSizes.subtitle,
+    fontWeight: '700',
+    color: colors.text,
   },
   input: {
     borderWidth: 1,
@@ -222,33 +400,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     fontSize: fontSizes.body,
   },
-  buttonsContainer: {
+  statRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.medium,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: spacing.medium,
-    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: spacing.medium,
+    justifyContent: 'space-between',
   },
-  startPauseButton: {
-    backgroundColor: colors.primary,
+  statLabel: {
+    flex: 1,
+    fontSize: fontSizes.body,
+    color: colors.secondary,
   },
-  resetButton: {
-    backgroundColor: colors.secondary,
-  },
-  buttonText: {
-    color: colors.white,
+  statValue: {
     fontSize: fontSizes.subtitle,
     fontWeight: '600',
+    color: colors.text,
   },
 });
 

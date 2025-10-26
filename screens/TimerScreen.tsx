@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -9,8 +9,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
+import { CATEGORY_OPTIONS } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 
 interface Stage {
@@ -18,20 +21,28 @@ interface Stage {
   nom: string;
 }
 
-const categorieOptions: SelectOption[] = [
-  { label: 'Supervision', value: 'Supervision' },
-  { label: 'Contact client', value: 'Contact client' },
-  { label: 'Autres', value: 'Autres' },
-];
+type TimerRouteParams = {
+  preselectedCategory?: string;
+  preselectedStage?: string;
+  autoStart?: boolean;
+};
 
 const TimerScreen = () => {
   const [time, setTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [description, setDescription] = useState('');
-  const [categorie, setCategorie] = useState('Supervision');
+  const [categorie, setCategorie] = useState<string>(CATEGORY_OPTIONS[0]?.value ?? '');
   const [stages, setStages] = useState<Stage[]>([]);
   const [selectedStage, setSelectedStage] = useState<string | undefined>();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const route = useRoute<RouteProp<Record<string, TimerRouteParams | undefined>, string>>();
+  const routeParams = route.params;
+  const categoryOptions = useMemo<SelectOption[]>(
+    () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
+    [],
+  );
+  const navigation = useNavigation<any>();
+  const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
 
   useEffect(() => {
     const fetchStages = async () => {
@@ -39,7 +50,11 @@ const TimerScreen = () => {
         const fetchedStages = await getStages();
         setStages(fetchedStages as Stage[]);
         if (fetchedStages.length > 0) {
-          setSelectedStage(fetchedStages[0].id);
+          if (routeParams?.preselectedStage && fetchedStages.some((stage) => stage.id === routeParams.preselectedStage)) {
+            setSelectedStage(routeParams.preselectedStage);
+          } else {
+            setSelectedStage(fetchedStages[0].id);
+          }
         }
       } catch (error) {
         console.error('Error fetching stages:', error);
@@ -47,15 +62,23 @@ const TimerScreen = () => {
       }
     };
     fetchStages();
-
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, []);
+  }, [routeParams?.preselectedStage]);
 
-  const startTimer = () => {
+  useEffect(() => {
+    if (routeParams?.preselectedCategory) {
+      setCategorie(routeParams.preselectedCategory);
+    }
+    if (routeParams?.autoStart) {
+      setShouldAutoStart(true);
+    }
+  }, [routeParams?.preselectedCategory, routeParams?.autoStart]);
+
+  const startTimer = useCallback(() => {
     if (isRunning) {
       return;
     }
@@ -63,7 +86,17 @@ const TimerScreen = () => {
     intervalRef.current = setInterval(() => {
       setTime((prevTime) => prevTime + 1);
     }, 1000);
-  };
+  }, [isRunning]);
+
+  useEffect(() => {
+    if (shouldAutoStart && selectedStage) {
+      startTimer();
+      setShouldAutoStart(false);
+      if (routeParams?.autoStart) {
+        navigation.setParams({ ...routeParams, autoStart: false });
+      }
+    }
+  }, [shouldAutoStart, selectedStage, startTimer, navigation, routeParams]);
 
   const pauseTimer = () => {
     if (!isRunning) {
@@ -137,8 +170,8 @@ const TimerScreen = () => {
           />
           <SelectInput
             value={categorie}
-            onValueChange={setCategorie}
-            options={categorieOptions}
+            onValueChange={(value) => setCategorie(value)}
+            options={categoryOptions}
             disabled={isRunning}
           />
           <TextInput
