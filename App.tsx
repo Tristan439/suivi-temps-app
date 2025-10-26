@@ -20,7 +20,7 @@ const Stack = createNativeStackNavigator();
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   Accueil: { focused: 'home', default: 'home-outline' },
   Minuteur: { focused: 'timer', default: 'timer-outline' },
-  Pomodoro: { focused: 'stopwatch', default: 'stopwatch-outline' },
+  Pomodoro: { focused: 'flame', default: 'flame-outline' },
   Stages: { focused: 'briefcase', default: 'briefcase-outline' },
 };
 
@@ -50,9 +50,9 @@ function MainApp() {
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.lightGray,
-          height: 60,
-          paddingBottom: 6,
-          paddingTop: 6,
+          height: 70,
+          paddingBottom: 14,
+          paddingTop: 10,
         },
         tabBarLabelStyle: {
           fontSize: 12,

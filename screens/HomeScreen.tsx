@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Keyboard,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -407,15 +409,7 @@ const HomeScreen = () => {
     return (
       <View key={section.id} style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
-          <View style={styles.sectionHeaderLeft}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <View style={styles.sectionTotalBadge}>
-              <Ionicons name="time-outline" size={16} color={colors.primary} />
-              <Text style={styles.sectionTotalText}>
-                {sectionTotal > 0 ? secondsToHuman(sectionTotal) : '0 min'}
-              </Text>
-            </View>
-          </View>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
           <TouchableOpacity onPress={() => toggleSection(section.id)} style={styles.sectionToggle}>
             <Ionicons
               name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -436,28 +430,28 @@ const HomeScreen = () => {
                     <Text style={styles.rowTotalText}>{secondsToHuman(cumuls[row.key] || 0)}</Text>
                   </View>
                 </View>
-              </View>
-              <View style={styles.rowActions}>
-                <TouchableOpacity
-                  style={[styles.iconButton, styles.timerButton]}
-                  onPress={() => handleStartTimer(row.key)}
-                >
-                  <Ionicons name="timer-outline" size={18} color={colors.white} />
-                </TouchableOpacity>
-                {section.id === 'autres' && (
+                <View style={styles.rowActions}>
                   <TouchableOpacity
-                    style={[styles.iconButton, styles.pomodoroButton]}
-                    onPress={handleStartPomodoro}
+                    style={[styles.iconButton, styles.timerButton]}
+                    onPress={() => handleStartTimer(row.key)}
                   >
-                    <Ionicons name="flame-outline" size={18} color={colors.white} />
+                    <Ionicons name="timer-outline" size={18} color={colors.white} />
                   </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[styles.iconButton, styles.manualButton]}
-                  onPress={() => openManualModal(row.key)}
-                >
-                  <Ionicons name="add-outline" size={18} color={colors.primary} />
-                </TouchableOpacity>
+                  {section.id === 'autres' && (
+                    <TouchableOpacity
+                      style={[styles.iconButton, styles.pomodoroButton]}
+                      onPress={handleStartPomodoro}
+                    >
+                      <Ionicons name="flame-outline" size={18} color={colors.white} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.iconButton, styles.manualButton]}
+                    onPress={() => openManualModal(row.key)}
+                  >
+                    <Ionicons name="add-outline" size={18} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           ))}
@@ -483,12 +477,17 @@ const HomeScreen = () => {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.headerCard}>
-            <Text style={styles.headerLabel}>Stage</Text>
-            <SelectInput
-              value={selectedStage}
-              onValueChange={setSelectedStage}
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.headerCard}>
+              <Text style={styles.headerLabel}>Stage</Text>
+              <SelectInput
+                value={selectedStage}
+                onValueChange={setSelectedStage}
               options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
               placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
             />
@@ -518,17 +517,7 @@ const HomeScreen = () => {
           {(unknownCumuls.length > 0 || unknownEntries.length > 0) && (
             <View style={styles.sectionCard}>
               <View style={styles.sectionHeader}>
-                <View style={styles.sectionHeaderLeft}>
-                  <Text style={styles.sectionTitle}>Autres catégories</Text>
-                  <View style={styles.sectionTotalBadge}>
-                    <Ionicons name="time-outline" size={16} color={colors.primary} />
-                    <Text style={styles.sectionTotalText}>
-                      {unknownCumuls.length > 0
-                        ? secondsToHuman(unknownCumuls.reduce((acc, [, value]) => acc + (value || 0), 0))
-                        : '0 min'}
-                    </Text>
-                  </View>
-                </View>
+                <Text style={styles.sectionTitle}>Autres catégories</Text>
               </View>
               <View style={styles.sectionRows}>
                 {unknownCumuls.map(([key, value]) => (
@@ -559,7 +548,8 @@ const HomeScreen = () => {
             <Ionicons name="add-circle-outline" size={20} color={colors.white} />
             <Text style={styles.primaryButtonText}>Ajouter une entrée manuelle</Text>
           </TouchableOpacity>
-        </ScrollView>
+          </ScrollView>
+        </TouchableWithoutFeedback>
       )}
 
       <Modal
@@ -568,13 +558,21 @@ const HomeScreen = () => {
         visible={manualModalVisible}
         onRequestClose={() => setManualModalVisible(false)}
       >
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalTitle}>Ajouter une entrée</Text>
-            <SelectInput
-              value={manualCategorie}
-              options={manualCategoryOptions}
-              onValueChange={setManualCategorie}
+        <TouchableWithoutFeedback
+          accessible={false}
+          onPress={() => {
+            Keyboard.dismiss();
+            setManualModalVisible(false);
+          }}
+        >
+          <View style={styles.centeredView}>
+            <TouchableWithoutFeedback accessible={false} onPress={() => {}}>
+              <View style={styles.modalView}>
+                <Text style={styles.modalTitle}>Ajouter une entrée</Text>
+                <SelectInput
+                  value={manualCategorie}
+                  options={manualCategoryOptions}
+                  onValueChange={setManualCategorie}
               placeholder="Catégorie"
               style={styles.modalSelect}
             />
@@ -600,8 +598,10 @@ const HomeScreen = () => {
             >
               <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
             </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       <Modal
@@ -610,13 +610,21 @@ const HomeScreen = () => {
         visible={entryModalVisible}
         onRequestClose={closeEntryModal}
       >
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalTitle}>Modifier l'entrée</Text>
-            {entryDateInfo ? <Text style={styles.modalSubtitle}>{entryDateInfo}</Text> : null}
-            <SelectInput
-              value={entryStage}
-              onValueChange={setEntryStage}
+        <TouchableWithoutFeedback
+          accessible={false}
+          onPress={() => {
+            Keyboard.dismiss();
+            closeEntryModal();
+          }}
+        >
+          <View style={styles.centeredView}>
+            <TouchableWithoutFeedback accessible={false} onPress={() => {}}>
+              <View style={styles.modalView}>
+                <Text style={styles.modalTitle}>Modifier l'entrée</Text>
+                {entryDateInfo ? <Text style={styles.modalSubtitle}>{entryDateInfo}</Text> : null}
+                <SelectInput
+                  value={entryStage}
+                  onValueChange={setEntryStage}
               options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
               placeholder="Sélectionner un stage"
               style={styles.modalSelect}
@@ -656,8 +664,10 @@ const HomeScreen = () => {
             >
               <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
             </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </SafeAreaView>
   );
@@ -743,29 +753,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  sectionHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.medium,
-  },
   sectionTitle: {
     fontSize: fontSizes.title,
     fontWeight: '700',
     color: colors.text,
-  },
-  sectionTotalBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#e7f1ff',
-    paddingVertical: spacing.small / 1.5,
-    paddingHorizontal: spacing.medium,
-    borderRadius: 999,
-  },
-  sectionTotalText: {
-    fontSize: fontSizes.body,
-    fontWeight: '700',
-    color: colors.primary,
   },
   sectionToggle: {
     padding: spacing.small,
@@ -774,9 +765,6 @@ const styles = StyleSheet.create({
     gap: spacing.medium,
   },
   sectionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: colors.background,
     borderRadius: 12,
     paddingVertical: spacing.medium,
@@ -791,11 +779,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.medium,
+    width: '100%',
   },
   rowLabel: {
     fontSize: fontSizes.subtitle,
     fontWeight: '600',
     color: colors.text,
+    flexShrink: 1,
   },
   rowTotalBadge: {
     flexDirection: 'row',
@@ -804,17 +794,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#e7f1ff',
     paddingVertical: spacing.small / 1.5,
     paddingHorizontal: spacing.medium,
-    borderRadius: 999,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(64, 123, 255, 0.2)',
+    alignSelf: 'flex-end',
   },
   rowTotalText: {
     fontSize: fontSizes.body,
     fontWeight: '700',
     color: colors.primary,
+    flexShrink: 1,
   },
   rowActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.small,
+    marginTop: spacing.small,
+    alignSelf: 'flex-end',
   },
   timerButton: {
     backgroundColor: colors.primary,
