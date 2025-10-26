@@ -48,12 +48,18 @@ const CategorySectionCard: React.FC<CategorySectionCardProps> = ({
   resolveSubCategoryLabel,
 }) => (
   <View style={styles.sectionCard}>
-    <View style={styles.sectionHeader}>
+    <TouchableOpacity
+      onPress={() => onToggle(section.id)}
+      activeOpacity={0.7}
+      style={styles.sectionHeader}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: isExpanded }}
+    >
       <Text style={styles.sectionTitle}>{section.title}</Text>
-      <TouchableOpacity onPress={() => onToggle(section.id)} style={styles.sectionToggle}>
+      <View style={styles.sectionToggle}>
         <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.darkGray} />
-      </TouchableOpacity>
-    </View>
+      </View>
+    </TouchableOpacity>
 
     <View style={styles.sectionRows}>
       {rows.map((row) => (

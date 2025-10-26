@@ -118,14 +118,15 @@ const TabBar = ({ state, navigation }: BottomTabBarProps) => {
 function MainApp() {
   return (
     <Tab.Navigator
+      initialRouteName="Accueil"
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Accueil" component={HomeScreen} />
       <Tab.Screen name="Minuteur" component={TimerScreen} />
       <Tab.Screen name="Pomodoro" component={PomodoroScreen} />
+      <Tab.Screen name="Accueil" component={HomeScreen} />
       <Tab.Screen name="Tâches" component={TasksScreen} />
       <Tab.Screen name="Paramètres" component={SettingsScreen} />
     </Tab.Navigator>
