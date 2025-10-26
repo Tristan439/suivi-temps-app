@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
 
@@ -33,6 +33,7 @@ type TimerRouteParams = {
 };
 
 const TimerScreen = () => {
+  const insets = useSafeAreaInsets();
   const [time, setTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [description, setDescription] = useState('');
@@ -219,7 +220,10 @@ const TimerScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: insets.bottom + spacing.large * 3 },
+          ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           onScrollBeginDrag={() => Keyboard.dismiss()}

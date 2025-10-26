@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -33,9 +33,12 @@ type PomodoroRouteParams = {
   preselectedStage?: string;
   preselectedCategory?: string;
   autoStart?: boolean;
+  initialDescription?: string;
+  taskCardId?: string;
 };
 
 const PomodoroScreen = () => {
+  const insets = useSafeAreaInsets();
   const [workDuration, setWorkDuration] = useState(DEFAULT_WORK_MINUTES);
   const [breakDuration, setBreakDuration] = useState(DEFAULT_BREAK_MINUTES);
   const [workDurationInput, setWorkDurationInput] = useState(String(DEFAULT_WORK_MINUTES));
@@ -69,6 +72,8 @@ const PomodoroScreen = () => {
   const navigation = useNavigation<any>();
   const routeParams = route.params;
   const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
+  const [linkedTaskCardId, setLinkedTaskCardId] = useState<string | undefined>(routeParams?.taskCardId);
+  const [hasElapsedCurrentSession, setHasElapsedCurrentSession] = useState(false);
 
   const applySettings = useCallback(
     (incoming: AppSettings) => {
@@ -183,28 +188,42 @@ const PomodoroScreen = () => {
     if (routeParams?.autoStart) {
       setShouldAutoStart(true);
     }
-  }, [routeParams?.preselectedCategory, routeParams?.autoStart]);
+    if (routeParams?.initialDescription) {
+      setDescription(routeParams.initialDescription);
+    }
+    if (routeParams?.taskCardId !== undefined) {
+      setLinkedTaskCardId(routeParams.taskCardId);
+    } else {
+      setLinkedTaskCardId(undefined);
+    }
+  }, [routeParams?.preselectedCategory, routeParams?.autoStart, routeParams?.initialDescription, routeParams?.taskCardId]);
 
   useEffect(() => {
     if (isActive) {
       intervalRef.current = setInterval(() => {
         if (seconds > 0) {
+          setHasElapsedCurrentSession(true);
           setSeconds((prev) => prev - 1);
         } else if (minutes > 0) {
+          setHasElapsedCurrentSession(true);
           setMinutes((prev) => prev - 1);
           setSeconds(59);
         } else {
           const wasWorkSession = isWorkSession;
 
           if (wasWorkSession && selectedStage) {
-            addEntreeTemps({
+            const entryData: Record<string, any> = {
               dureeSecondes: workDuration * 60,
               categorie,
               description,
               date: new Date(),
               stageId: selectedStage,
               type: 'pomodoro',
-            })
+            };
+            if (linkedTaskCardId) {
+              entryData.taskCardId = linkedTaskCardId;
+            }
+            addEntreeTemps(entryData)
               .then(() => {
                 Alert.alert('Session terminée', 'Votre session de travail a été enregistrée.');
               })
@@ -234,6 +253,7 @@ const PomodoroScreen = () => {
           setIsLongBreak(wasWorkSession ? shouldTakeLongBreak : false);
           setMinutes(nextMinutes);
           setSeconds(0);
+          setHasElapsedCurrentSession(false);
 
           const shouldAutoStartNextPhase = wasWorkSession && autoStartBreaks;
           setIsActive(shouldAutoStartNextPhase);
@@ -261,9 +281,11 @@ const PomodoroScreen = () => {
     longBreakDuration,
     completedSessions,
     autoStartBreaks,
+    linkedTaskCardId,
   ]);
 
   const startSession = useCallback(() => {
+    setHasElapsedCurrentSession(false);
     setIsActive(true);
   }, []);
 
@@ -371,17 +393,19 @@ const PomodoroScreen = () => {
   };
 
   useEffect(() => {
-    if (!isActive) {
-      if (isWorkSession) {
-        setMinutes(workDuration);
-        setSeconds(0);
-      } else {
-        const targetBreak = isLongBreak ? longBreakDuration : breakDuration;
-        setMinutes(targetBreak);
-        setSeconds(0);
-      }
+    if (isActive || hasElapsedCurrentSession) {
+      return;
     }
-  }, [workDuration, breakDuration, longBreakDuration, isWorkSession, isLongBreak, isActive]);
+
+    if (isWorkSession) {
+      setMinutes(workDuration);
+      setSeconds(0);
+    } else {
+      const targetBreak = isLongBreak ? longBreakDuration : breakDuration;
+      setMinutes(targetBreak);
+      setSeconds(0);
+    }
+  }, [workDuration, breakDuration, longBreakDuration, isWorkSession, isLongBreak, isActive, hasElapsedCurrentSession]);
 
   const handleStopEarly = async () => {
     if (!selectedStage) {
@@ -406,14 +430,18 @@ const PomodoroScreen = () => {
 
     if (effectiveSeconds > 0) {
       try {
-        await addEntreeTemps({
+        const entryData: Record<string, any> = {
           dureeSecondes: effectiveSeconds,
           categorie,
           description,
           date: new Date(),
           stageId: selectedStage,
           type: 'pomodoro-stop',
-        });
+        };
+        if (linkedTaskCardId) {
+          entryData.taskCardId = linkedTaskCardId;
+        }
+        await addEntreeTemps(entryData);
         Alert.alert('Temps enregistré', 'La durée écoulée a été ajoutée.');
       } catch (error) {
         console.error('Error saving pomodoro entry:', error);
@@ -424,6 +452,36 @@ const PomodoroScreen = () => {
     resetTimer();
   };
 
+  const handleSavePausedSession = async () => {
+    if (!selectedStage) {
+      Alert.alert('Stage requis', 'Veuillez sélectionner un stage.');
+      return;
+    }
+    const elapsedSeconds = workDuration * 60 - (minutes * 60 + seconds);
+    if (elapsedSeconds <= 0) {
+      return;
+    }
+    try {
+      const entryData: Record<string, any> = {
+        dureeSecondes: elapsedSeconds,
+        categorie,
+        description,
+        date: new Date(),
+        stageId: selectedStage,
+        type: 'pomodoro',
+      };
+      if (linkedTaskCardId) {
+        entryData.taskCardId = linkedTaskCardId;
+      }
+      await addEntreeTemps(entryData);
+      Alert.alert('Session enregistrée', 'La durée écoulée a été ajoutée à votre suivi.');
+      resetTimer();
+    } catch (error) {
+      console.error('Error saving paused pomodoro session:', error);
+      Alert.alert('Erreur', "Impossible d'enregistrer la session.");
+    }
+  };
+
   const resetTimer = () => {
     setIsActive(false);
     setIsWorkSession(true);
@@ -431,6 +489,7 @@ const PomodoroScreen = () => {
     setSeconds(0);
     setCompletedSessions(0);
     setIsLongBreak(false);
+    setHasElapsedCurrentSession(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
@@ -441,10 +500,18 @@ const PomodoroScreen = () => {
   const remainingSeconds = minutes * 60 + seconds;
   const progressRatio = Math.min(1, Math.max(0, (totalPhaseSeconds - remainingSeconds) / totalPhaseSeconds));
   const completedForDisplay = Math.min(completedSessions, TOTAL_SESSIONS);
+  const canLogPausedWork =
+    !isActive && isWorkSession && (minutes !== workDuration || seconds !== 0) && workDuration > 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + spacing.large * 3 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.heroCard, isWorkSession ? styles.heroWork : styles.heroBreak]}>
           <View style={styles.heroHeader}>
             <View style={styles.heroIcon}>
@@ -456,6 +523,11 @@ const PomodoroScreen = () => {
                 {isActive ? (isWorkSession ? 'Session de travail' : 'Pause en cours') : 'Prêt à démarrer'}
               </Text>
             </View>
+          </View>
+
+          <View style={styles.currentTaskBanner}>
+            <Ionicons name="clipboard-outline" size={18} color={colors.white} />
+            <Text style={styles.currentTaskText}>{description?.trim() || 'Session Pomodoro'}</Text>
           </View>
 
           <View style={styles.progressTrack}>
@@ -492,6 +564,15 @@ const PomodoroScreen = () => {
               <Ionicons name="refresh" size={18} color={colors.white} />
               <Text style={styles.heroButtonText}>Reset</Text>
             </TouchableOpacity>
+            {canLogPausedWork && (
+              <TouchableOpacity
+                style={[styles.heroButton, styles.heroSaveButton]}
+                onPress={handleSavePausedSession}
+              >
+                <Ionicons name="save-outline" size={18} color={colors.white} />
+                <Text style={styles.heroButtonText}>Enregistrer</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -680,9 +761,12 @@ const styles = StyleSheet.create({
   heroActions: {
     flexDirection: 'row',
     gap: spacing.medium,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   heroButton: {
     flex: 1,
+    minWidth: 110,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -703,7 +787,24 @@ const styles = StyleSheet.create({
   heroResetButton: {
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
+  heroSaveButton: {
+    backgroundColor: colors.accent,
+  },
   heroButtonText: {
+    color: colors.white,
+    fontSize: fontSizes.subtitle,
+    fontWeight: '600',
+  },
+  currentTaskBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.small,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+    borderRadius: 12,
+  },
+  currentTaskText: {
     color: colors.white,
     fontSize: fontSizes.subtitle,
     fontWeight: '600',

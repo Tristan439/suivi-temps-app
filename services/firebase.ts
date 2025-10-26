@@ -1,6 +1,17 @@
 
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, query, where, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  where,
+  doc,
+  deleteDoc,
+  updateDoc,
+  orderBy,
+} from 'firebase/firestore';
 import { getAuth, initializeAuth, type Auth, type Persistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -39,6 +50,7 @@ export const auth = authInstance;
 
 const entreesTempsCollection = collection(db, 'entreesTemps');
 const stagesCollection = collection(db, 'stages');
+const taskListsCollection = collection(db, 'taskLists');
 
 interface EntreeTemps {
   stageId: string;
@@ -48,11 +60,24 @@ interface EntreeTemps {
   description?: string;
   categorie: string;
   type: 'chrono' | 'pomodoro' | 'manuel' | 'pomodoro-stop';
+  taskCardId?: string;
 }
 
 interface Stage {
     userId: string;
     nom: string;
+}
+
+interface TaskListDoc {
+  title: string;
+  userId: string;
+  createdAt: number;
+}
+
+interface TaskCardDoc {
+  title: string;
+  userId: string;
+  createdAt: number;
 }
 
 export const addEntreeTemps = async (entree: Omit<EntreeTemps, 'userId'>) => {
@@ -100,6 +125,26 @@ export const getEntreesParMois = async (year: number, month: number, stageId?: s
     return entrees;
   } catch (error) {
     console.error("Error getting documents: ", error);
+    throw error;
+  }
+};
+
+export const getEntreesForTaskCard = async (taskCardId: string) => {
+  const user = auth.currentUser;
+  if (!user) {
+    return [];
+  }
+
+  try {
+    const entriesQuery = query(
+      entreesTempsCollection,
+      where('userId', '==', user.uid),
+      where('taskCardId', '==', taskCardId),
+    );
+    const snapshot = await getDocs(entriesQuery);
+    return snapshot.docs.map((entryDoc) => ({ id: entryDoc.id, ...entryDoc.data() }));
+  } catch (error) {
+    console.error('Error getting task card entries: ', error);
     throw error;
   }
 };
@@ -163,6 +208,119 @@ export const addStage = async (nom: string) => {
         console.error("Error adding stage: ", e);
         throw e;
     }
+};
+
+export const getTaskLists = async () => {
+  const user = auth.currentUser;
+  if (!user) {
+    return [];
+  }
+
+  try {
+    const listQuery = query(taskListsCollection, where('userId', '==', user.uid), orderBy('createdAt', 'asc'));
+    const listSnapshot = await getDocs(listQuery);
+
+    const listsWithCards = await Promise.all(
+      listSnapshot.docs.map(async (listDoc) => {
+        const listData = listDoc.data() as TaskListDoc;
+        const cardsCollection = collection(db, 'taskLists', listDoc.id, 'cards');
+        const cardsSnapshot = await getDocs(query(cardsCollection, orderBy('createdAt', 'asc')));
+        const cards = cardsSnapshot.docs.map((cardDoc) => ({
+          id: cardDoc.id,
+          ...(cardDoc.data() as TaskCardDoc),
+        }));
+        return {
+          id: listDoc.id,
+          ...listData,
+          cards,
+        };
+      }),
+    );
+
+    return listsWithCards;
+  } catch (error) {
+    console.error('Error loading task lists:', error);
+    throw error;
+  }
+};
+
+export const addTaskList = async (title: string) => {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
+  try {
+    return await addDoc(taskListsCollection, {
+      title,
+      userId: user.uid,
+      createdAt: Date.now(),
+    });
+  } catch (error) {
+    console.error('Error adding task list:', error);
+    throw error;
+  }
+};
+
+export const updateTaskList = async (listId: string, updates: Partial<Pick<TaskListDoc, 'title'>>) => {
+  try {
+    const listRef = doc(db, 'taskLists', listId);
+    await updateDoc(listRef, updates);
+  } catch (error) {
+    console.error('Error updating task list:', error);
+    throw error;
+  }
+};
+
+export const deleteTaskList = async (listId: string) => {
+  try {
+    const cardsCollection = collection(db, 'taskLists', listId, 'cards');
+    const cardsSnapshot = await getDocs(cardsCollection);
+    await Promise.all(cardsSnapshot.docs.map((cardDoc) => deleteDoc(cardDoc.ref)));
+    await deleteDoc(doc(db, 'taskLists', listId));
+  } catch (error) {
+    console.error('Error deleting task list:', error);
+    throw error;
+  }
+};
+
+export const addTaskCard = async (listId: string, title: string) => {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
+  try {
+    const cardsCollection = collection(db, 'taskLists', listId, 'cards');
+    return await addDoc(cardsCollection, {
+      title,
+      userId: user.uid,
+      createdAt: Date.now(),
+    });
+  } catch (error) {
+    console.error('Error adding task card:', error);
+    throw error;
+  }
+};
+
+export const updateTaskCard = async (listId: string, cardId: string, updates: Partial<Pick<TaskCardDoc, 'title'>>) => {
+  try {
+    const cardRef = doc(db, 'taskLists', listId, 'cards', cardId);
+    await updateDoc(cardRef, updates);
+  } catch (error) {
+    console.error('Error updating task card:', error);
+    throw error;
+  }
+};
+
+export const deleteTaskCard = async (listId: string, cardId: string) => {
+  try {
+    const cardRef = doc(db, 'taskLists', listId, 'cards', cardId);
+    await deleteDoc(cardRef);
+  } catch (error) {
+    console.error('Error deleting task card:', error);
+    throw error;
+  }
 };
 
 export const getCumulsParCategorie = async (year: number, month: number, stageId?: string) => {

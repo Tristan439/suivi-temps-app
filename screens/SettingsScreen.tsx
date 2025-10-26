@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { colors, fontSizes, spacing } from '../styles/global';
@@ -31,6 +31,7 @@ interface Stage {
 const clampDuration = (value: number) => Math.min(Math.max(value, 1), 180);
 
 const SettingsScreen = () => {
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -177,7 +178,10 @@ const SettingsScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + spacing.large * 3 },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >

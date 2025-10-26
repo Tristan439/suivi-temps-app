@@ -9,5 +9,16 @@ service cloud.firestore {
       allow create: if request.auth.uid == request.resource.data.userId;
       allow read, update, delete: if request.auth.uid == resource.data.userId;
     }
+    match /taskLists/{taskListId} {
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow get, update, delete: if request.auth.uid == resource.data.userId;
+      allow list: if request.auth.uid != null;
+
+      match /cards/{cardId} {
+        allow create: if request.auth.uid == request.resource.data.userId;
+        allow get, update, delete: if request.auth.uid == resource.data.userId;
+        allow list: if request.auth.uid != null;
+      }
+    }
   }
 }

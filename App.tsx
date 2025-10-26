@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer, DefaultTheme, Theme } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from './screens/HomeScreen';
 import TimerScreen from './screens/TimerScreen';
@@ -34,37 +36,91 @@ const navigationTheme: Theme = {
   },
 };
 
+const styles = StyleSheet.create({
+  tabWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    width: '88%',
+    backgroundColor: colors.darkGray,
+    borderRadius: 32,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 26,
+    marginHorizontal: 4,
+  },
+  tabItemActive: {
+    backgroundColor: colors.primary,
+  },
+});
+
+const TabBar = ({ state, navigation }: BottomTabBarProps) => {
+  const insets = useSafeAreaInsets();
+  const bottomOffset = Math.max(insets.bottom, 16);
+
+  return (
+    <View pointerEvents="box-none" style={[styles.tabWrapper, { paddingBottom: bottomOffset }]}>
+      <View style={styles.tabContainer}>
+        {state.routes.map((route, index) => {
+          const focused = state.index === index;
+          const iconConfig = TAB_ICONS[route.name];
+          const iconName = focused ? iconConfig.focused : iconConfig.default;
+          const color = focused ? colors.white : colors.secondary;
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!focused && !event.defaultPrevented) {
+              navigation.navigate(route.name);
+            }
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              accessibilityRole="button"
+              accessibilityState={focused ? { selected: true } : {}}
+              onPress={onPress}
+              style={[styles.tabItem, focused && styles.tabItemActive]}
+              activeOpacity={0.9}
+            >
+              <Ionicons name={iconName} size={22} color={color} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
+
 function MainApp() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <TabBar {...props} />}
       screenOptions={({ route }) => ({
-        headerTitleAlign: 'center',
-        headerStyle: {
-          backgroundColor: colors.background,
-        },
-        headerShadowVisible: false,
-        headerTitleStyle: {
-          color: colors.text,
-          fontWeight: '600',
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.secondary,
-        tabBarStyle: {
-          backgroundColor: colors.white,
-          borderTopColor: colors.lightGray,
-          height: 70,
-          paddingBottom: 14,
-          paddingTop: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-        },
-        tabBarIcon: ({ color, focused, size = 20 }) => {
-          const iconConfig = TAB_ICONS[route.name];
-          const iconName = focused ? iconConfig.focused : iconConfig.default;
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
+        headerShown: false,
       })}
     >
       <Tab.Screen name="Accueil" component={HomeScreen} />

@@ -14,7 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
@@ -54,6 +54,7 @@ interface Entree {
   date: any;
   stageId?: string;
   type?: string;
+  taskCardId?: string;
 }
 
 const ensureSelectOptions = (options: SelectOption[], value?: string) => {
@@ -98,6 +99,7 @@ const formatDateDisplay = (date: Date) =>
 
 const HomeScreen = () => {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
 
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -585,7 +587,10 @@ const HomeScreen = () => {
             </View>
           ) : (
             <ScrollView
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={[
+                styles.scrollContent,
+                { paddingBottom: insets.bottom + spacing.large * 3 },
+              ]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
