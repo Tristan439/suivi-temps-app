@@ -10,16 +10,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
+import { AppSettings, DEFAULT_SETTINGS, loadSettings } from '../services/settings';
 
-const DEFAULT_WORK_MINUTES = 25;
-const DEFAULT_BREAK_MINUTES = 5;
+const DEFAULT_WORK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroWorkMinutes;
+const DEFAULT_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroBreakMinutes;
+const DEFAULT_LONG_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroLongBreakMinutes;
 const TOTAL_SESSIONS = 4;
 
 interface Stage {
@@ -38,10 +40,13 @@ const PomodoroScreen = () => {
   const [breakDuration, setBreakDuration] = useState(DEFAULT_BREAK_MINUTES);
   const [workDurationInput, setWorkDurationInput] = useState(String(DEFAULT_WORK_MINUTES));
   const [breakDurationInput, setBreakDurationInput] = useState(String(DEFAULT_BREAK_MINUTES));
+  const [longBreakDuration, setLongBreakDuration] = useState(DEFAULT_LONG_BREAK_MINUTES);
+  const [longBreakDurationInput, setLongBreakDurationInput] = useState(String(DEFAULT_LONG_BREAK_MINUTES));
   const [minutes, setMinutes] = useState(DEFAULT_WORK_MINUTES);
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [isWorkSession, setIsWorkSession] = useState(true);
+  const [isLongBreak, setIsLongBreak] = useState(false);
   const [description, setDescription] = useState('Session Pomodoro');
   const [categorie, setCategorie] = useState<string>(
     CATEGORY_OPTIONS.find((option) => option.value === 'autres_pomodoro')?.value ||
@@ -51,6 +56,8 @@ const PomodoroScreen = () => {
   const [stages, setStages] = useState<Stage[]>([]);
   const [selectedStage, setSelectedStage] = useState<string | undefined>();
   const [completedSessions, setCompletedSessions] = useState(0);
+  const [autoStartBreaks, setAutoStartBreaks] = useState(DEFAULT_SETTINGS.autoStartPomodoroBreaks);
+  const [preferredStageId, setPreferredStageId] = useState<string | undefined>(DEFAULT_SETTINGS.defaultStageId);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const categoryOptions = useMemo<SelectOption[]>(
@@ -63,28 +70,111 @@ const PomodoroScreen = () => {
   const routeParams = route.params;
   const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
 
+  const applySettings = useCallback(
+    (incoming: AppSettings) => {
+      const {
+        defaultPomodoroWorkMinutes: nextWork,
+        defaultPomodoroBreakMinutes: nextBreak,
+        defaultPomodoroLongBreakMinutes: nextLongBreak,
+        autoStartPomodoroBreaks: nextAutoStartBreaks,
+        defaultStageId: nextDefaultStageId,
+      } = incoming;
+
+      setWorkDuration(nextWork);
+      setWorkDurationInput(String(nextWork));
+      if (!isActive && isWorkSession) {
+        setMinutes(nextWork);
+        setSeconds(0);
+      }
+
+      setBreakDuration(nextBreak);
+      setBreakDurationInput(String(nextBreak));
+      if (!isActive && !isWorkSession && !isLongBreak) {
+        setMinutes(nextBreak);
+        setSeconds(0);
+      }
+
+      setLongBreakDuration(nextLongBreak);
+      setLongBreakDurationInput(String(nextLongBreak));
+      if (!isActive && !isWorkSession && isLongBreak) {
+        setMinutes(nextLongBreak);
+        setSeconds(0);
+      }
+
+      setAutoStartBreaks(nextAutoStartBreaks);
+      setPreferredStageId(nextDefaultStageId);
+    },
+    [isActive, isWorkSession, isLongBreak],
+  );
+
+  const loadAndApplySettings = useCallback(async () => {
+    try {
+      const loaded = await loadSettings();
+      applySettings(loaded);
+    } catch (error) {
+      console.error('Error loading pomodoro settings:', error);
+    }
+  }, [applySettings]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAndApplySettings();
+    }, [loadAndApplySettings]),
+  );
+
+  const applyStageSelection = useCallback(
+    (availableStages: Stage[]) => {
+      if (availableStages.length === 0) {
+        return;
+      }
+
+      const routeStage = routeParams?.preselectedStage;
+
+      if (routeStage && availableStages.some((stage) => stage.id === routeStage)) {
+        setSelectedStage(routeStage);
+        return;
+      }
+
+      if (preferredStageId && availableStages.some((stage) => stage.id === preferredStageId)) {
+        setSelectedStage((current) => {
+          if (current && availableStages.some((stage) => stage.id === current)) {
+            return current;
+          }
+          return preferredStageId;
+        });
+        return;
+      }
+
+      setSelectedStage((current) => {
+        if (current && availableStages.some((stage) => stage.id === current)) {
+          return current;
+        }
+        return availableStages[0].id;
+      });
+    },
+    [preferredStageId, routeParams?.preselectedStage],
+  );
+
   useEffect(() => {
     const fetchStages = async () => {
       try {
         const fetchedStages = await getStages();
-        setStages(fetchedStages as Stage[]);
-        if (fetchedStages.length > 0) {
-          if (
-            routeParams?.preselectedStage &&
-            fetchedStages.some((stage) => stage.id === routeParams.preselectedStage)
-          ) {
-            setSelectedStage(routeParams.preselectedStage);
-          } else {
-            setSelectedStage(fetchedStages[0].id);
-          }
-        }
+        const typedStages = (Array.isArray(fetchedStages) ? fetchedStages : []) as Stage[];
+        setStages(typedStages);
+        applyStageSelection(typedStages);
       } catch (error) {
         console.error('Error fetching stages:', error);
         Alert.alert('Erreur', 'Impossible de charger les stages.');
       }
     };
     fetchStages();
-  }, [routeParams?.preselectedStage]);
+  }, [routeParams?.preselectedStage, applyStageSelection]);
+
+  useEffect(() => {
+    if (stages.length > 0) {
+      applyStageSelection(stages);
+    }
+  }, [stages, applyStageSelection]);
 
   useEffect(() => {
     if (routeParams?.preselectedCategory) {
@@ -104,7 +194,9 @@ const PomodoroScreen = () => {
           setMinutes((prev) => prev - 1);
           setSeconds(59);
         } else {
-          if (isWorkSession && selectedStage) {
+          const wasWorkSession = isWorkSession;
+
+          if (wasWorkSession && selectedStage) {
             addEntreeTemps({
               dureeSecondes: workDuration * 60,
               categorie,
@@ -120,16 +212,31 @@ const PomodoroScreen = () => {
                 console.error('Error saving pomodoro session:', error);
                 Alert.alert('Erreur', "Impossible d'enregistrer la session.");
               });
-            setCompletedSessions((prev) => prev + 1);
           }
 
-          setMinutes(isWorkSession ? breakDuration : workDuration);
-          setSeconds(0);
-          setIsWorkSession((prev) => !prev);
-          setIsActive(false);
           if (intervalRef.current) {
             clearInterval(intervalRef.current);
           }
+
+          const nextCompletedCount = wasWorkSession ? completedSessions + 1 : completedSessions;
+          if (wasWorkSession) {
+            setCompletedSessions(nextCompletedCount);
+          }
+
+          const shouldTakeLongBreak = wasWorkSession && nextCompletedCount % TOTAL_SESSIONS === 0;
+          const nextMinutes = wasWorkSession
+            ? shouldTakeLongBreak
+              ? longBreakDuration
+              : breakDuration
+            : workDuration;
+
+          setIsWorkSession(!wasWorkSession);
+          setIsLongBreak(wasWorkSession ? shouldTakeLongBreak : false);
+          setMinutes(nextMinutes);
+          setSeconds(0);
+
+          const shouldAutoStartNextPhase = wasWorkSession && autoStartBreaks;
+          setIsActive(shouldAutoStartNextPhase);
         }
       }, 1000);
     } else if (intervalRef.current) {
@@ -141,7 +248,20 @@ const PomodoroScreen = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isActive, seconds, minutes, isWorkSession, categorie, description, selectedStage, workDuration, breakDuration]);
+  }, [
+    isActive,
+    seconds,
+    minutes,
+    isWorkSession,
+    categorie,
+    description,
+    selectedStage,
+    workDuration,
+    breakDuration,
+    longBreakDuration,
+    completedSessions,
+    autoStartBreaks,
+  ]);
 
   const startSession = useCallback(() => {
     setIsActive(true);
@@ -221,17 +341,47 @@ const PomodoroScreen = () => {
     }
   };
 
+  const handleLongBreakDurationChange = (value: string) => {
+    const sanitized = value.replace(/[^0-9]/g, '');
+    setLongBreakDurationInput(sanitized);
+    if (sanitized === '') {
+      return;
+    }
+    const parsed = parseInt(sanitized, 10);
+    if (!Number.isNaN(parsed)) {
+      const clamped = clampDuration(parsed);
+      setLongBreakDuration(clamped);
+      if (String(clamped) !== sanitized) {
+        setLongBreakDurationInput(String(clamped));
+      }
+    }
+  };
+
+  const handleLongBreakDurationBlur = () => {
+    if (longBreakDurationInput === '' || Number.isNaN(parseInt(longBreakDurationInput, 10))) {
+      setLongBreakDurationInput(String(longBreakDuration));
+    } else {
+      const parsed = parseInt(longBreakDurationInput, 10);
+      if (!Number.isNaN(parsed)) {
+        const clamped = clampDuration(parsed);
+        setLongBreakDuration(clamped);
+        setLongBreakDurationInput(String(clamped));
+      }
+    }
+  };
+
   useEffect(() => {
     if (!isActive) {
       if (isWorkSession) {
         setMinutes(workDuration);
         setSeconds(0);
       } else {
-        setMinutes(breakDuration);
+        const targetBreak = isLongBreak ? longBreakDuration : breakDuration;
+        setMinutes(targetBreak);
         setSeconds(0);
       }
     }
-  }, [workDuration, breakDuration, isWorkSession, isActive]);
+  }, [workDuration, breakDuration, longBreakDuration, isWorkSession, isLongBreak, isActive]);
 
   const handleStopEarly = async () => {
     if (!selectedStage) {
@@ -243,13 +393,14 @@ const PomodoroScreen = () => {
       return;
     }
 
-    if (!isActive && !isWorkSession && minutes === breakDuration && seconds === 0) {
+    const expectedBreakMinutes = isLongBreak ? longBreakDuration : breakDuration;
+
+    if (!isActive && !isWorkSession && minutes === expectedBreakMinutes && seconds === 0) {
       return;
     }
 
-    const elapsedSeconds = isWorkSession
-      ? workDuration * 60 - (minutes * 60 + seconds)
-      : breakDuration * 60 - (minutes * 60 + seconds);
+    const totalPhaseMinutes = isWorkSession ? workDuration : expectedBreakMinutes;
+    const elapsedSeconds = totalPhaseMinutes * 60 - (minutes * 60 + seconds);
 
     const effectiveSeconds = elapsedSeconds > 0 ? elapsedSeconds : 0;
 
@@ -279,13 +430,14 @@ const PomodoroScreen = () => {
     setMinutes(workDuration);
     setSeconds(0);
     setCompletedSessions(0);
+    setIsLongBreak(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
   };
 
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  const totalPhaseSeconds = (isWorkSession ? workDuration : breakDuration) * 60;
+  const totalPhaseSeconds = (isWorkSession ? workDuration : isLongBreak ? longBreakDuration : breakDuration) * 60;
   const remainingSeconds = minutes * 60 + seconds;
   const progressRatio = Math.min(1, Math.max(0, (totalPhaseSeconds - remainingSeconds) / totalPhaseSeconds));
   const completedForDisplay = Math.min(completedSessions, TOTAL_SESSIONS);
@@ -400,6 +552,22 @@ const PomodoroScreen = () => {
               />
             </View>
           </View>
+          <View style={styles.durationRow}>
+            <View style={styles.durationField}>
+              <Text style={styles.durationLabel}>Pause longue (min)</Text>
+              <TextInput
+                style={styles.durationInput}
+                value={longBreakDurationInput}
+                onChangeText={handleLongBreakDurationChange}
+                onBlur={handleLongBreakDurationBlur}
+                keyboardType="number-pad"
+                maxLength={3}
+                editable={!isActive}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+            </View>
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -413,6 +581,11 @@ const PomodoroScreen = () => {
             <Ionicons name="leaf-outline" size={18} color={colors.secondary} />
             <Text style={styles.statLabel}>Durée des pauses</Text>
             <Text style={styles.statValue}>{breakDuration} min</Text>
+          </View>
+          <View style={styles.statRow}>
+            <Ionicons name="hourglass-outline" size={18} color={colors.primary} />
+            <Text style={styles.statLabel}>Pause longue</Text>
+            <Text style={styles.statValue}>{longBreakDuration} min</Text>
           </View>
           <View style={styles.statRow}>
             <Ionicons name="trail-sign-outline" size={18} color={colors.secondary} />

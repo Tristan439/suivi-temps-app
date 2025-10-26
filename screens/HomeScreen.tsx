@@ -39,6 +39,7 @@ import {
   getSectionForCategory,
 } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
+import { loadSettings } from '../services/settings';
 
 interface Stage {
   id: string;
@@ -123,6 +124,10 @@ const HomeScreen = () => {
   const [entryDateInfo, setEntryDateInfo] = useState('');
   const [entryDate, setEntryDate] = useState<Date>(new Date());
   const [entryDatePickerVisible, setEntryDatePickerVisible] = useState(false);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(date.getMonth());
+  const [selectedYear, setSelectedYear] = useState(date.getFullYear());
+  const [preferredStageId, setPreferredStageId] = useState<string | undefined>();
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     supervision: true,
@@ -145,6 +150,44 @@ const HomeScreen = () => {
     [categoryOptions, entryCategorie],
   );
 
+  const monthOptions = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, idx) => {
+        const label = new Date(2000, idx, 1).toLocaleString('default', { month: 'long' });
+        return { label: label.charAt(0).toUpperCase() + label.slice(1), value: idx };
+      }),
+    [],
+  );
+
+  const yearOptions = useMemo(() => {
+    const startYear = selectedYear - 10;
+    return Array.from({ length: 21 }, (_, idx) => startYear + idx);
+  }, [selectedYear]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      const fetchSettings = async () => {
+        try {
+          const settings = await loadSettings();
+          if (!isMounted) {
+            return;
+          }
+          setPreferredStageId(settings.defaultStageId);
+          if (settings.defaultStageId) {
+            setSelectedStage((current) => current ?? settings.defaultStageId);
+          }
+        } catch (error) {
+          console.error('Error loading preferred stage:', error);
+        }
+      };
+      fetchSettings();
+      return () => {
+        isMounted = false;
+      };
+    }, []),
+  );
+
   const fetchData = async () => {
     setLoading(true);
     const year = date.getFullYear();
@@ -163,10 +206,15 @@ const HomeScreen = () => {
       setStages(typedStages);
 
       if (typedStages.length > 0) {
+        const preferredStage =
+          preferredStageId && typedStages.some((stage) => stage.id === preferredStageId)
+            ? preferredStageId
+            : undefined;
+
         if (!selectedStage) {
-          setSelectedStage(typedStages[0].id);
+          setSelectedStage(preferredStage ?? typedStages[0].id);
         } else if (!typedStages.some((stage) => stage.id === selectedStage)) {
-          setSelectedStage(typedStages[0].id);
+          setSelectedStage(preferredStage ?? typedStages[0].id);
         }
       }
     } catch (error) {
@@ -180,7 +228,7 @@ const HomeScreen = () => {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [date, selectedStage]),
+    }, [date, selectedStage, preferredStageId]),
   );
 
   const totalSeconds = useMemo(
@@ -253,12 +301,24 @@ const HomeScreen = () => {
     }
   };
 
-  const changeMonth = (increment: number) => {
-    setDate((prevDate) => {
-      const newDate = new Date(prevDate);
-      newDate.setMonth(newDate.getMonth() + increment);
-      return newDate;
+  const toggleMonthPicker = () => {
+    setMonthPickerVisible((prevVisible) => {
+      const nextVisible = !prevVisible;
+      if (nextVisible) {
+        setSelectedMonthIndex(date.getMonth());
+        setSelectedYear(date.getFullYear());
+      }
+      return nextVisible;
     });
+  };
+
+  const applyMonthPicker = () => {
+    setDate(new Date(selectedYear, selectedMonthIndex, 1));
+    setMonthPickerVisible(false);
+  };
+
+  const cancelMonthPicker = () => {
+    setMonthPickerVisible(false);
   };
 
   const openManualModal = (category?: string) => {
@@ -541,16 +601,63 @@ const HomeScreen = () => {
                   }
                 />
 
-                <View style={styles.monthSelector}>
-                  <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(-1)}>
-                    <Ionicons name="chevron-back" size={20} color={colors.primary} />
+                <View>
+                  <TouchableOpacity
+                    style={styles.monthPickerButton}
+                    onPress={toggleMonthPicker}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="calendar" size={20} color={colors.primary} />
+                    <Text style={styles.monthPickerText}>
+                      {date.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                    </Text>
                   </TouchableOpacity>
-                  <Text style={styles.monthText}>
-                    {date.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                  </Text>
-                  <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(1)}>
-                    <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-                  </TouchableOpacity>
+                  {monthPickerVisible && (
+                    <View style={styles.monthPickerWrapper}>
+                      <View style={styles.monthPickerRow}>
+                        <View style={styles.pickerColumn}>
+                          <Text style={styles.pickerLabel}>Mois</Text>
+                          <Picker
+                            selectedValue={selectedMonthIndex}
+                            onValueChange={(value) => setSelectedMonthIndex(Number(value))}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                          >
+                            {monthOptions.map((option) => (
+                              <Picker.Item key={`month-${option.value}`} label={option.label} value={option.value} />
+                            ))}
+                          </Picker>
+                        </View>
+                        <View style={styles.pickerColumn}>
+                          <Text style={styles.pickerLabel}>Année</Text>
+                          <Picker
+                            selectedValue={selectedYear}
+                            onValueChange={(value) => setSelectedYear(Number(value))}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                          >
+                            {yearOptions.map((year) => (
+                              <Picker.Item key={`year-${year}`} label={`${year}`} value={year} />
+                            ))}
+                          </Picker>
+                        </View>
+                      </View>
+                      <View style={styles.monthPickerActions}>
+                        <TouchableOpacity
+                          style={[styles.monthPickerActionButton, styles.monthPickerCancelButton]}
+                          onPress={cancelMonthPicker}
+                        >
+                          <Text style={[styles.monthPickerActionText, styles.monthPickerCancelText]}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.monthPickerActionButton, styles.monthPickerApplyButton]}
+                          onPress={applyMonthPicker}
+                        >
+                          <Text style={[styles.monthPickerActionText, styles.monthPickerApplyText]}>Valider</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.summaryBadge}>
@@ -857,24 +964,58 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontWeight: '600',
   },
-  monthSelector: {
+  monthPickerButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  monthButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    gap: spacing.small,
     backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+    borderRadius: 12,
   },
-  monthText: {
+  monthPickerText: {
     fontSize: fontSizes.title,
     fontWeight: '700',
     color: colors.primary,
     textTransform: 'capitalize',
+  },
+  monthPickerWrapper: {
+    marginTop: spacing.small,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+    gap: spacing.small,
+  },
+  monthPickerRow: {
+    flexDirection: 'row',
+    gap: spacing.medium,
+  },
+  monthPickerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.small,
+  },
+  monthPickerActionButton: {
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+    borderRadius: 10,
+  },
+  monthPickerCancelButton: {
+    backgroundColor: colors.background,
+  },
+  monthPickerApplyButton: {
+    backgroundColor: colors.primary,
+  },
+  monthPickerActionText: {
+    fontSize: fontSizes.body,
+    fontWeight: '600',
+  },
+  monthPickerCancelText: {
+    color: colors.primary,
+  },
+  monthPickerApplyText: {
+    color: colors.white,
   },
   summaryBadge: {
     flexDirection: 'row',

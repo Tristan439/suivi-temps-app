@@ -8,7 +8,8 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import HomeScreen from './screens/HomeScreen';
 import TimerScreen from './screens/TimerScreen';
 import PomodoroScreen from './screens/PomodoroScreen';
-import StagesScreen from './screens/StagesScreen';
+import TasksScreen from './screens/TasksScreen';
+import SettingsScreen from './screens/SettingsScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import { auth } from './services/firebase';
@@ -21,7 +22,8 @@ const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   Accueil: { focused: 'home', default: 'home-outline' },
   Minuteur: { focused: 'timer', default: 'timer-outline' },
   Pomodoro: { focused: 'flame', default: 'flame-outline' },
-  Stages: { focused: 'briefcase', default: 'briefcase-outline' },
+  Tâches: { focused: 'checkmark-done', default: 'checkmark-done-outline' },
+  Paramètres: { focused: 'settings', default: 'settings-outline' },
 };
 
 const navigationTheme: Theme = {
@@ -68,7 +70,8 @@ function MainApp() {
       <Tab.Screen name="Accueil" component={HomeScreen} />
       <Tab.Screen name="Minuteur" component={TimerScreen} />
       <Tab.Screen name="Pomodoro" component={PomodoroScreen} />
-      <Tab.Screen name="Stages" component={StagesScreen} />
+      <Tab.Screen name="Tâches" component={TasksScreen} />
+      <Tab.Screen name="Paramètres" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
