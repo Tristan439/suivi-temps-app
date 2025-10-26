@@ -18,6 +18,7 @@ import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 import { AppSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from '../services/settings';
+import { handleDurationBlur, handleDurationChange } from '../utils/pomodoroDurations';
 
 const DEFAULT_WORK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroWorkMinutes;
 const DEFAULT_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroBreakMinutes;
@@ -356,105 +357,64 @@ const PomodoroScreen = () => {
     });
   };
 
-  const clampDuration = (value: number) => Math.max(1, Math.min(180, value));
+  const handleWorkDurationChange = (value: string) =>
+    handleDurationChange(value, setWorkDurationInput, setWorkDuration, {
+      isActive,
+      hasElapsedCurrentSession,
+      onResetProgress: () => setHasElapsedCurrentSession(false),
+    });
 
-  const handleWorkDurationChange = (value: string) => {
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setWorkDurationInput(sanitized);
-    if (sanitized === '') {
-      return;
-    }
-    const parsed = parseInt(sanitized, 10);
-    if (!Number.isNaN(parsed)) {
-      const clamped = clampDuration(parsed);
-      setWorkDuration(clamped);
-      if (!isActive && !hasElapsedCurrentSession) {
-        setHasElapsedCurrentSession(false);
-      }
-      if (String(clamped) !== sanitized) {
-        setWorkDurationInput(String(clamped));
-      }
-    }
-  };
-
-  const handleBreakDurationChange = (value: string) => {
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setBreakDurationInput(sanitized);
-    if (sanitized === '') {
-      return;
-    }
-    const parsed = parseInt(sanitized, 10);
-    if (!Number.isNaN(parsed)) {
-      const clamped = clampDuration(parsed);
-      setBreakDuration(clamped);
-      if (!isActive && !hasElapsedCurrentSession) {
-        setHasElapsedCurrentSession(false);
-      }
-      if (String(clamped) !== sanitized) {
-        setBreakDurationInput(String(clamped));
-      }
-    }
-  };
+  const handleBreakDurationChange = (value: string) =>
+    handleDurationChange(value, setBreakDurationInput, setBreakDuration, {
+      isActive,
+      hasElapsedCurrentSession,
+      onResetProgress: () => setHasElapsedCurrentSession(false),
+    });
 
   const handleWorkDurationBlur = () => {
-    if (workDurationInput === '' || Number.isNaN(parseInt(workDurationInput, 10))) {
-      setWorkDurationInput(String(workDuration));
-    } else {
-      const parsed = parseInt(workDurationInput, 10);
-      if (!Number.isNaN(parsed)) {
-        const clamped = clampDuration(parsed);
-        setWorkDuration(clamped);
-        setWorkDurationInput(String(clamped));
-        persistSettings({ defaultPomodoroWorkMinutes: clamped });
-      }
-    }
+    handleDurationBlur(
+      workDurationInput,
+      workDuration,
+      setWorkDurationInput,
+      setWorkDuration,
+      { persist: persistSettings, settingKey: 'defaultPomodoroWorkMinutes' },
+    );
   };
 
   const handleBreakDurationBlur = () => {
-    if (breakDurationInput === '' || Number.isNaN(parseInt(breakDurationInput, 10))) {
-      setBreakDurationInput(String(breakDuration));
-    } else {
-      const parsed = parseInt(breakDurationInput, 10);
-      if (!Number.isNaN(parsed)) {
-        const clamped = clampDuration(parsed);
-        setBreakDuration(clamped);
-        setBreakDurationInput(String(clamped));
-        persistSettings({ defaultPomodoroBreakMinutes: clamped });
-      }
-    }
+    handleDurationBlur(
+      breakDurationInput,
+      breakDuration,
+      setBreakDurationInput,
+      setBreakDuration,
+      { persist: persistSettings, settingKey: 'defaultPomodoroBreakMinutes' },
+    );
   };
 
-  const handleLongBreakDurationChange = (value: string) => {
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setLongBreakDurationInput(sanitized);
-    if (sanitized === '') {
-      return;
-    }
-    const parsed = parseInt(sanitized, 10);
-    if (!Number.isNaN(parsed)) {
-      const clamped = clampDuration(parsed);
-      setLongBreakDuration(clamped);
-      if (!isActive && !hasElapsedCurrentSession) {
-        setHasElapsedCurrentSession(false);
-      }
-      if (String(clamped) !== sanitized) {
-        setLongBreakDurationInput(String(clamped));
-      }
-    }
-  };
+  const handleLongBreakDurationChange = (value: string) =>
+    handleDurationChange(value, setLongBreakDurationInput, setLongBreakDuration, {
+      isActive,
+      hasElapsedCurrentSession,
+      onResetProgress: () => setHasElapsedCurrentSession(false),
+    });
+
+  const handleStageChange = useCallback(
+    (value: string) => {
+      setSelectedStage(value);
+      setPreferredStageId(value);
+      persistSettings({ defaultStageId: value || undefined });
+    },
+    [persistSettings],
+  );
 
   const handleLongBreakDurationBlur = () => {
-    if (longBreakDurationInput === '' || Number.isNaN(parseInt(longBreakDurationInput, 10))) {
-      setLongBreakDurationInput(String(longBreakDuration));
-    } else {
-      const parsed = parseInt(longBreakDurationInput, 10);
-      if (!Number.isNaN(parsed)) {
-        const clamped = clampDuration(parsed);
-        setLongBreakDuration(clamped);
-        setLongBreakDurationInput(String(clamped));
-        persistSettings({ defaultPomodoroLongBreakMinutes: clamped });
-      }
-    }
+    handleDurationBlur(
+      longBreakDurationInput,
+      longBreakDuration,
+      setLongBreakDurationInput,
+      setLongBreakDuration,
+      { persist: persistSettings, settingKey: 'defaultPomodoroLongBreakMinutes' },
+    );
   };
 
   useEffect(() => {
@@ -653,7 +613,7 @@ const PomodoroScreen = () => {
           <Text style={styles.cardTitle}>Contexte</Text>
           <SelectInput
             value={selectedStage}
-            onValueChange={setSelectedStage}
+            onValueChange={handleStageChange}
             options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
             placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
             disabled={stages.length === 0 || isActive}

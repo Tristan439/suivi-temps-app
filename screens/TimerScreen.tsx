@@ -19,7 +19,7 @@ import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
-import { loadSettings } from '../services/settings';
+import { loadSettings, updateSettings } from '../services/settings';
 
 interface Stage {
   id: string;
@@ -58,6 +58,14 @@ const TimerScreen = () => {
   );
   const navigation = useNavigation<any>();
   const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
+
+  const persistDefaultStage = useCallback(async (stageId?: string) => {
+    try {
+      await updateSettings({ defaultStageId: stageId });
+    } catch (error) {
+      console.error('Error saving default stage:', error);
+    }
+  }, []);
 
   const applyStageSelection = useCallback(
     (availableStages: Stage[]) => {
@@ -159,6 +167,16 @@ const TimerScreen = () => {
     }, 1000);
   }, [isRunning]);
 
+  const handleStageChange = useCallback(
+    (value: string) => {
+      const stageId = value || undefined;
+      setSelectedStage(stageId);
+      setPreferredStageId(stageId);
+      persistDefaultStage(stageId);
+    },
+    [persistDefaultStage],
+  );
+
   useEffect(() => {
     if (shouldAutoStart && selectedStage) {
       startTimer();
@@ -248,7 +266,7 @@ const TimerScreen = () => {
           <View style={styles.controlsContainer}>
             <SelectInput
               value={selectedStage}
-              onValueChange={setSelectedStage}
+              onValueChange={handleStageChange}
               options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
               placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
               disabled={stages.length === 0 || isRunning}

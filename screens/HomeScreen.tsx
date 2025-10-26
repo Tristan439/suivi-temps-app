@@ -29,6 +29,10 @@ import {
   updateEntreeTemps,
 } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
+import CategorySectionCard, {
+  CategoryRowSummary,
+} from '../components/home/CategorySectionCard';
+import HistoryList, { HistoryEntry } from '../components/home/HistoryList';
 import {
   CATEGORY_KEYS,
   CATEGORY_OPTIONS,
@@ -307,6 +311,27 @@ const HomeScreen = () => {
     return totals;
   }, [entrees]);
 
+  const sectionRowSummaries = useMemo(() => {
+    const summaries: Record<string, CategoryRowSummary[]> = {};
+    CATEGORY_SECTIONS.forEach((section) => {
+      summaries[section.id] = section.rows.map((row) => {
+        const categorySubTotals =
+          subCategoryTotals[row.key] ?? ({
+            intervention: 0,
+            evaluation: 0,
+          } as Record<SubCategoryKey, number>);
+        return {
+          key: row.key,
+          label: row.label,
+          totalSeconds: cumuls[row.key] || 0,
+          interventionSeconds: categorySubTotals.intervention ?? 0,
+          evaluationSeconds: categorySubTotals.evaluation ?? 0,
+        } satisfies CategoryRowSummary;
+      });
+    });
+    return summaries;
+  }, [cumuls, subCategoryTotals]);
+
   const unknownEntries = useMemo(
     () => sortedEntries.filter((entry) => !CATEGORY_KEYS.has(entry.categorie)),
     [sortedEntries],
@@ -532,124 +557,6 @@ const HomeScreen = () => {
     ]);
   };
 
-  const renderHistoryList = (entries: Entree[]) => {
-    if (entries.length === 0) {
-      return <Text style={styles.emptyHistoryText}>Aucune activité enregistrée encore.</Text>;
-    }
-
-    return entries.map((entry) => (
-      <TouchableOpacity
-        key={entry.id}
-        style={styles.historyRow}
-        activeOpacity={0.8}
-        onPress={() => openEntryModal(entry)}
-      >
-        <View style={styles.historyTextGroup}>
-          <Text style={styles.historyLabel}>{formatEntryTimestamp(entry.date)}</Text>
-          <Text style={styles.historyDescription}>{entry.description || 'Sans description'}</Text>
-        </View>
-        <View style={styles.historyMeta}>
-          <Text style={styles.historyDuration}>{secondsToHuman(entry.dureeSecondes)}</Text>
-          <Text style={styles.historyCategory}>
-            {getCategoryLabel(entry.categorie)} • {getSubCategoryLabel(entry.subCategorie)}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    ));
-  };
-
-  const renderSection = (section: CategorySection) => {
-    const isExpanded = expandedSections[section.id] ?? true;
-
-    return (
-      <View key={section.id} style={styles.sectionCard}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{section.title}</Text>
-          <TouchableOpacity onPress={() => toggleSection(section.id)} style={styles.sectionToggle}>
-            <Ionicons
-              name={isExpanded ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color={colors.darkGray}
-            />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.sectionRows}>
-          {section.rows.map((row) => {
-            const categorySubTotals =
-              subCategoryTotals[row.key] ??
-              ({
-                intervention: 0,
-                evaluation: 0,
-              } as Record<SubCategoryKey, number>);
-            const interventionSeconds = categorySubTotals.intervention ?? 0;
-            const evaluationSeconds = categorySubTotals.evaluation ?? 0;
-
-            return (
-              <View key={row.key} style={styles.sectionRow}>
-                <View style={styles.rowInfo}>
-                  <View style={styles.rowHeader}>
-                    <Text style={styles.rowLabel}>{row.label}</Text>
-                    <View style={styles.rowActionsTop}>
-                      <TouchableOpacity
-                        style={[styles.iconButton, styles.timerButton]}
-                        onPress={() => handleStartTimer(row.key)}
-                      >
-                        <Ionicons name="timer-outline" size={18} color={colors.white} />
-                      </TouchableOpacity>
-                      {section.id === 'autres' && (
-                        <TouchableOpacity
-                          style={[styles.iconButton, styles.pomodoroButton]}
-                          onPress={handleStartPomodoro}
-                        >
-                          <Ionicons name="flame-outline" size={18} color={colors.white} />
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity
-                        style={[styles.iconButton, styles.manualButton]}
-                        onPress={() => openManualModal(row.key)}
-                      >
-                        <Ionicons name="add-outline" size={18} color={colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <View style={styles.rowSubTotals}>
-                    <View style={[styles.rowSubBadge, styles.rowSubBadgeIntervention]}>
-                      <Text style={styles.rowSubBadgeLabel}>Intervention</Text>
-                      <Text style={styles.rowSubBadgeValue}>
-                        {secondsToHuman(interventionSeconds)}
-                      </Text>
-                    </View>
-                    <View style={[styles.rowSubBadge, styles.rowSubBadgeEvaluation]}>
-                      <Text style={[styles.rowSubBadgeLabel, styles.rowSubBadgeEvaluationLabel]}>
-                        Évaluation
-                      </Text>
-                      <Text
-                        style={[styles.rowSubBadgeValue, styles.rowSubBadgeEvaluationValue]}
-                      >
-                        {secondsToHuman(evaluationSeconds)}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
-        {isExpanded && (
-          <View style={styles.historyContainer}>
-            <View style={styles.historyHeader}>
-              <Ionicons name="time-outline" size={18} color={colors.secondary} />
-              <Text style={styles.historyTitle}>Historique</Text>
-            </View>
-            {renderHistoryList(sectionEntries[section.id] || [])}
-          </View>
-        )}
-      </View>
-    );
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -749,7 +656,25 @@ const HomeScreen = () => {
                 </View>
               </View>
 
-              {CATEGORY_SECTIONS.map((section) => renderSection(section))}
+              {CATEGORY_SECTIONS.map((section) => (
+                <CategorySectionCard
+                  key={section.id}
+                  section={section}
+                  rows={sectionRowSummaries[section.id] || []}
+                  isExpanded={expandedSections[section.id] ?? true}
+                  onToggle={toggleSection}
+                  onStartTimer={handleStartTimer}
+                  onStartPomodoro={handleStartPomodoro}
+                  onOpenManual={openManualModal}
+                  showPomodoroAction={section.id === 'autres'}
+                  historyEntries={(sectionEntries[section.id] || []) as HistoryEntry[]}
+                  onSelectEntry={openEntryModal}
+                  formatTimestamp={formatEntryTimestamp}
+                  formatDuration={secondsToHuman}
+                  resolveCategoryLabel={getCategoryLabel}
+                  resolveSubCategoryLabel={getSubCategoryLabel}
+                />
+              ))}
 
               {(unknownCumuls.length > 0 || unknownEntries.length > 0) && (
                 <View style={styles.sectionCard}>
@@ -776,7 +701,14 @@ const HomeScreen = () => {
                       <Ionicons name="time-outline" size={18} color={colors.secondary} />
                       <Text style={styles.historyTitle}>Historique</Text>
                     </View>
-                    {renderHistoryList(unknownEntries)}
+                    <HistoryList
+                      entries={unknownEntries as HistoryEntry[]}
+                      onSelectEntry={openEntryModal}
+                      formatTimestamp={formatEntryTimestamp}
+                      formatDuration={secondsToHuman}
+                      resolveCategoryLabel={getCategoryLabel}
+                      resolveSubCategoryLabel={getSubCategoryLabel}
+                    />
                   </View>
                 </View>
               )}
@@ -1226,30 +1158,6 @@ const styles = StyleSheet.create({
   rowSubBadgeEvaluationValue: {
     color: '#2F9E44',
   },
-  rowActionsTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.small,
-  },
-  timerButton: {
-    backgroundColor: colors.primary,
-  },
-  manualButton: {
-    backgroundColor: colors.white,
-  },
-  pomodoroButton: {
-    backgroundColor: '#f06595',
-    borderColor: '#f06595',
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
   historyContainer: {
     backgroundColor: colors.background,
     borderRadius: 12,
@@ -1264,45 +1172,6 @@ const styles = StyleSheet.create({
   historyTitle: {
     fontSize: fontSizes.subtitle,
     fontWeight: '600',
-    color: colors.secondary,
-  },
-  historyRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: spacing.small,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.lightGray,
-  },
-  historyTextGroup: {
-    flex: 1,
-    paddingRight: spacing.medium,
-    gap: 4,
-  },
-  historyLabel: {
-    fontSize: fontSizes.body,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  historyDescription: {
-    fontSize: fontSizes.body,
-    color: colors.secondary,
-  },
-  historyMeta: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  historyDuration: {
-    fontSize: fontSizes.body,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  historyCategory: {
-    fontSize: fontSizes.body,
-    color: colors.secondary,
-  },
-  emptyHistoryText: {
-    fontSize: fontSizes.body,
     color: colors.secondary,
   },
   primaryButton: {

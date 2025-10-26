@@ -212,6 +212,17 @@ export const addStage = async (nom: string) => {
     }
 };
 
+export const updateStage = async (stageId: string, nom: string) => {
+  try {
+    const stageDocRef = doc(db, 'stages', stageId);
+    await updateDoc(stageDocRef, { nom });
+    console.log('Stage updated with ID:', stageId);
+  } catch (error) {
+    console.error('Error updating stage: ', error);
+    throw error;
+  }
+};
+
 export const getTaskLists = async () => {
   const user = auth.currentUser;
   if (!user) {
