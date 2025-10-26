@@ -1,0 +1,246 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { addEntreeTemps, getStages } from '../services/firebase';
+import SelectInput, { SelectOption } from '../components/SelectInput';
+import { colors, fontSizes, spacing } from '../styles/global';
+
+interface Stage {
+  id: string;
+  nom: string;
+}
+
+const categorieOptions: SelectOption[] = [
+  { label: 'Supervision', value: 'Supervision' },
+  { label: 'Contact client', value: 'Contact client' },
+  { label: 'Autres', value: 'Autres' },
+];
+
+const TimerScreen = () => {
+  const [time, setTime] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [description, setDescription] = useState('');
+  const [categorie, setCategorie] = useState('Supervision');
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [selectedStage, setSelectedStage] = useState<string | undefined>();
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const fetchStages = async () => {
+      try {
+        const fetchedStages = await getStages();
+        setStages(fetchedStages as Stage[]);
+        if (fetchedStages.length > 0) {
+          setSelectedStage(fetchedStages[0].id);
+        }
+      } catch (error) {
+        console.error('Error fetching stages:', error);
+        Alert.alert('Erreur', 'Impossible de charger les stages.');
+      }
+    };
+    fetchStages();
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  const startTimer = () => {
+    if (isRunning) {
+      return;
+    }
+    setIsRunning(true);
+    intervalRef.current = setInterval(() => {
+      setTime((prevTime) => prevTime + 1);
+    }, 1000);
+  };
+
+  const pauseTimer = () => {
+    if (!isRunning) {
+      return;
+    }
+    setIsRunning(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+  };
+
+  const stopTimer = async () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    setIsRunning(false);
+
+    if (time < 1) {
+      Alert.alert('Erreur', 'Le minuteur doit tourner pendant au moins une seconde.');
+      return;
+    }
+    if (!selectedStage) {
+      Alert.alert('Erreur', 'Veuillez sélectionner un stage.');
+      return;
+    }
+
+    try {
+      await addEntreeTemps({
+        dureeSecondes: time,
+        categorie,
+        description,
+        date: new Date(),
+        stageId: selectedStage,
+        type: 'chrono',
+      });
+      Alert.alert('Succès', 'Votre temps a été enregistré.');
+    } catch (error) {
+      console.error('Error saving time entry:', error);
+      Alert.alert('Erreur', "Impossible d'enregistrer votre temps.");
+    }
+
+    setTime(0);
+    setDescription('');
+  };
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600)
+      .toString()
+      .padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60)
+      .toString()
+      .padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.timerCard}>
+          <Text style={styles.timerDisplay}>{formatTime(time)}</Text>
+        </View>
+
+        <View style={styles.controlsContainer}>
+          <SelectInput
+            value={selectedStage}
+            onValueChange={setSelectedStage}
+            options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
+            placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
+            disabled={stages.length === 0 || isRunning}
+          />
+          <SelectInput
+            value={categorie}
+            onValueChange={setCategorie}
+            options={categorieOptions}
+            disabled={isRunning}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Description"
+            value={description}
+            onChangeText={setDescription}
+            editable={!isRunning}
+          />
+        </View>
+
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              isRunning ? styles.pauseButton : styles.startButton,
+            ]}
+            onPress={isRunning ? pauseTimer : startTimer}
+          >
+            <Text style={styles.buttonText}>{isRunning ? 'Pause' : 'Start'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.button, styles.stopButton]} onPress={stopTimer}>
+            <Text style={styles.buttonText}>Stop</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
+    paddingHorizontal: spacing.large,
+    paddingVertical: spacing.large,
+    justifyContent: 'space-between',
+  },
+  timerCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    paddingVertical: spacing.large,
+    paddingHorizontal: spacing.large,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  timerDisplay: {
+    fontSize: 60,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 2,
+  },
+  controlsContainer: {
+    gap: spacing.medium,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+    borderRadius: 10,
+    padding: spacing.medium,
+    backgroundColor: colors.white,
+    fontSize: fontSizes.body,
+  },
+  buttonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.medium,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: spacing.medium,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  startButton: {
+    backgroundColor: colors.primary,
+  },
+  pauseButton: {
+    backgroundColor: colors.secondary,
+  },
+  stopButton: {
+    backgroundColor: colors.accent,
+  },
+  buttonText: {
+    color: colors.white,
+    fontSize: fontSizes.subtitle,
+    fontWeight: '600',
+  },
+});
+
+export default TimerScreen;
