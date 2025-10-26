@@ -87,21 +87,21 @@ const PomodoroScreen = () => {
 
       setWorkDuration(nextWork);
       setWorkDurationInput(String(nextWork));
-      if (!isActive && isWorkSession) {
+      if (!isActive && isWorkSession && !hasElapsedCurrentSession) {
         setMinutes(nextWork);
         setSeconds(0);
       }
 
       setBreakDuration(nextBreak);
       setBreakDurationInput(String(nextBreak));
-      if (!isActive && !isWorkSession && !isLongBreak) {
+      if (!isActive && !isWorkSession && !isLongBreak && !hasElapsedCurrentSession) {
         setMinutes(nextBreak);
         setSeconds(0);
       }
 
       setLongBreakDuration(nextLongBreak);
       setLongBreakDurationInput(String(nextLongBreak));
-      if (!isActive && !isWorkSession && isLongBreak) {
+      if (!isActive && !isWorkSession && isLongBreak && !hasElapsedCurrentSession) {
         setMinutes(nextLongBreak);
         setSeconds(0);
       }
@@ -109,7 +109,7 @@ const PomodoroScreen = () => {
       setAutoStartBreaks(nextAutoStartBreaks);
       setPreferredStageId(nextDefaultStageId);
     },
-    [isActive, isWorkSession, isLongBreak],
+    [isActive, isWorkSession, isLongBreak, hasElapsedCurrentSession],
   );
 
   const loadAndApplySettings = useCallback(async () => {
@@ -285,7 +285,6 @@ const PomodoroScreen = () => {
   ]);
 
   const startSession = useCallback(() => {
-    setHasElapsedCurrentSession(false);
     setIsActive(true);
   }, []);
 
@@ -300,7 +299,12 @@ const PomodoroScreen = () => {
   }, [shouldAutoStart, selectedStage, startSession, navigation, routeParams]);
 
   const toggleTimer = () => {
-    setIsActive((prev) => !prev);
+    setIsActive((prev) => {
+      if (prev) {
+        setHasElapsedCurrentSession(true);
+      }
+      return !prev;
+    });
   };
 
   const clampDuration = (value: number) => Math.max(1, Math.min(180, value));
@@ -315,6 +319,9 @@ const PomodoroScreen = () => {
     if (!Number.isNaN(parsed)) {
       const clamped = clampDuration(parsed);
       setWorkDuration(clamped);
+      if (!isActive) {
+        setHasElapsedCurrentSession(false);
+      }
       if (String(clamped) !== sanitized) {
         setWorkDurationInput(String(clamped));
       }
@@ -331,6 +338,9 @@ const PomodoroScreen = () => {
     if (!Number.isNaN(parsed)) {
       const clamped = clampDuration(parsed);
       setBreakDuration(clamped);
+      if (!isActive) {
+        setHasElapsedCurrentSession(false);
+      }
       if (String(clamped) !== sanitized) {
         setBreakDurationInput(String(clamped));
       }
@@ -373,6 +383,9 @@ const PomodoroScreen = () => {
     if (!Number.isNaN(parsed)) {
       const clamped = clampDuration(parsed);
       setLongBreakDuration(clamped);
+      if (!isActive) {
+        setHasElapsedCurrentSession(false);
+      }
       if (String(clamped) !== sanitized) {
         setLongBreakDurationInput(String(clamped));
       }
@@ -495,6 +508,12 @@ const PomodoroScreen = () => {
     }
   };
 
+  const handleUnlinkTask = () => {
+    if (isActive) return;
+    setDescription('Session Pomodoro');
+    setLinkedTaskCardId(undefined);
+  };
+
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   const totalPhaseSeconds = (isWorkSession ? workDuration : isLongBreak ? longBreakDuration : breakDuration) * 60;
   const remainingSeconds = minutes * 60 + seconds;
@@ -528,6 +547,11 @@ const PomodoroScreen = () => {
           <View style={styles.currentTaskBanner}>
             <Ionicons name="clipboard-outline" size={18} color={colors.white} />
             <Text style={styles.currentTaskText}>{description?.trim() || 'Session Pomodoro'}</Text>
+            {linkedTaskCardId && !isActive && (
+              <TouchableOpacity onPress={handleUnlinkTask} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close-circle-outline" size={22} color="rgba(255,255,255,0.7)" />
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.progressTrack}>
@@ -805,6 +829,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   currentTaskText: {
+    flex: 1,
     color: colors.white,
     fontSize: fontSizes.subtitle,
     fontWeight: '600',
