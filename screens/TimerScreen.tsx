@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -155,49 +159,63 @@ const TimerScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.timerCard}>
-          <Text style={styles.timerDisplay}>{formatTime(time)}</Text>
-        </View>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onScrollBeginDrag={() => Keyboard.dismiss()}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.timerCard}>
+            <Text style={styles.timerDisplay}>{formatTime(time)}</Text>
+          </View>
 
-        <View style={styles.controlsContainer}>
-          <SelectInput
-            value={selectedStage}
-            onValueChange={setSelectedStage}
-            options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
-            placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
-            disabled={stages.length === 0 || isRunning}
-          />
-          <SelectInput
-            value={categorie}
-            onValueChange={(value) => setCategorie(value)}
-            options={categoryOptions}
-            disabled={isRunning}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Description"
-            value={description}
-            onChangeText={setDescription}
-            editable={!isRunning}
-          />
-        </View>
+          <View style={styles.controlsContainer}>
+            <SelectInput
+              value={selectedStage}
+              onValueChange={setSelectedStage}
+              options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
+              placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
+              disabled={stages.length === 0 || isRunning}
+            />
+            <SelectInput
+              value={categorie}
+              onValueChange={(value) => setCategorie(value)}
+              options={categoryOptions}
+              disabled={isRunning}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Description"
+              value={description}
+              onChangeText={setDescription}
+              editable={!isRunning}
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={Keyboard.dismiss}
+            />
+          </View>
 
-        <View style={styles.buttonsContainer}>
-          <TouchableOpacity
-            style={[
-              styles.button,
-              isRunning ? styles.pauseButton : styles.startButton,
-            ]}
-            onPress={isRunning ? pauseTimer : startTimer}
-          >
-            <Text style={styles.buttonText}>{isRunning ? 'Pause' : 'Start'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.button, styles.stopButton]} onPress={stopTimer}>
-            <Text style={styles.buttonText}>Stop</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+          <View style={styles.buttonsContainer}>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                isRunning ? styles.pauseButton : styles.startButton,
+              ]}
+              onPress={isRunning ? pauseTimer : startTimer}
+            >
+              <Text style={styles.buttonText}>{isRunning ? 'Pause' : 'Start'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.stopButton]} onPress={stopTimer}>
+              <Text style={styles.buttonText}>Stop</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -207,8 +225,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
+  flex: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     justifyContent: 'space-between',

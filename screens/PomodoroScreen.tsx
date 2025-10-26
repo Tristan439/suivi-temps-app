@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,8 +18,8 @@ import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 
-const WORK_MINUTES = 25;
-const BREAK_MINUTES = 5;
+const DEFAULT_WORK_MINUTES = 25;
+const DEFAULT_BREAK_MINUTES = 5;
 const TOTAL_SESSIONS = 4;
 
 interface Stage {
@@ -33,7 +34,11 @@ type PomodoroRouteParams = {
 };
 
 const PomodoroScreen = () => {
-  const [minutes, setMinutes] = useState(WORK_MINUTES);
+  const [workDuration, setWorkDuration] = useState(DEFAULT_WORK_MINUTES);
+  const [breakDuration, setBreakDuration] = useState(DEFAULT_BREAK_MINUTES);
+  const [workDurationInput, setWorkDurationInput] = useState(String(DEFAULT_WORK_MINUTES));
+  const [breakDurationInput, setBreakDurationInput] = useState(String(DEFAULT_BREAK_MINUTES));
+  const [minutes, setMinutes] = useState(DEFAULT_WORK_MINUTES);
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
   const [isWorkSession, setIsWorkSession] = useState(true);
@@ -101,7 +106,7 @@ const PomodoroScreen = () => {
         } else {
           if (isWorkSession && selectedStage) {
             addEntreeTemps({
-              dureeSecondes: WORK_MINUTES * 60,
+              dureeSecondes: workDuration * 60,
               categorie,
               description,
               date: new Date(),
@@ -118,7 +123,7 @@ const PomodoroScreen = () => {
             setCompletedSessions((prev) => prev + 1);
           }
 
-          setMinutes(isWorkSession ? BREAK_MINUTES : WORK_MINUTES);
+          setMinutes(isWorkSession ? breakDuration : workDuration);
           setSeconds(0);
           setIsWorkSession((prev) => !prev);
           setIsActive(false);
@@ -136,7 +141,7 @@ const PomodoroScreen = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isActive, seconds, minutes, isWorkSession, categorie, description, selectedStage]);
+  }, [isActive, seconds, minutes, isWorkSession, categorie, description, selectedStage, workDuration, breakDuration]);
 
   const startSession = useCallback(() => {
     setIsActive(true);
@@ -156,19 +161,95 @@ const PomodoroScreen = () => {
     setIsActive((prev) => !prev);
   };
 
+  const clampDuration = (value: number) => Math.max(1, Math.min(180, value));
+
+  const handleWorkDurationChange = (value: string) => {
+    const sanitized = value.replace(/[^0-9]/g, '');
+    setWorkDurationInput(sanitized);
+    if (sanitized === '') {
+      return;
+    }
+    const parsed = parseInt(sanitized, 10);
+    if (!Number.isNaN(parsed)) {
+      const clamped = clampDuration(parsed);
+      setWorkDuration(clamped);
+      if (String(clamped) !== sanitized) {
+        setWorkDurationInput(String(clamped));
+      }
+    }
+  };
+
+  const handleBreakDurationChange = (value: string) => {
+    const sanitized = value.replace(/[^0-9]/g, '');
+    setBreakDurationInput(sanitized);
+    if (sanitized === '') {
+      return;
+    }
+    const parsed = parseInt(sanitized, 10);
+    if (!Number.isNaN(parsed)) {
+      const clamped = clampDuration(parsed);
+      setBreakDuration(clamped);
+      if (String(clamped) !== sanitized) {
+        setBreakDurationInput(String(clamped));
+      }
+    }
+  };
+
+  const handleWorkDurationBlur = () => {
+    if (workDurationInput === '' || Number.isNaN(parseInt(workDurationInput, 10))) {
+      setWorkDurationInput(String(workDuration));
+    } else {
+      const parsed = parseInt(workDurationInput, 10);
+      if (!Number.isNaN(parsed)) {
+        const clamped = clampDuration(parsed);
+        setWorkDuration(clamped);
+        setWorkDurationInput(String(clamped));
+      }
+    }
+  };
+
+  const handleBreakDurationBlur = () => {
+    if (breakDurationInput === '' || Number.isNaN(parseInt(breakDurationInput, 10))) {
+      setBreakDurationInput(String(breakDuration));
+    } else {
+      const parsed = parseInt(breakDurationInput, 10);
+      if (!Number.isNaN(parsed)) {
+        const clamped = clampDuration(parsed);
+        setBreakDuration(clamped);
+        setBreakDurationInput(String(clamped));
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isActive) {
+      if (isWorkSession) {
+        setMinutes(workDuration);
+        setSeconds(0);
+      } else {
+        setMinutes(breakDuration);
+        setSeconds(0);
+      }
+    }
+  }, [workDuration, breakDuration, isWorkSession, isActive]);
+
   const handleStopEarly = async () => {
     if (!selectedStage) {
       Alert.alert('Stage requis', 'Veuillez sélectionner un stage.');
       return;
     }
 
-    if (!isActive && minutes === WORK_MINUTES && seconds === 0) {
+    if (!isActive && minutes === workDuration && seconds === 0 && isWorkSession) {
+      return;
+    }
+
+    if (!isActive && !isWorkSession && minutes === breakDuration && seconds === 0) {
       return;
     }
 
     const elapsedSeconds = isWorkSession
-      ? WORK_MINUTES * 60 - (minutes * 60 + seconds)
-      : BREAK_MINUTES * 60 - (minutes * 60 + seconds);
+      ? workDuration * 60 - (minutes * 60 + seconds)
+      : breakDuration * 60 - (minutes * 60 + seconds);
 
     const effectiveSeconds = elapsedSeconds > 0 ? elapsedSeconds : 0;
 
@@ -195,7 +276,7 @@ const PomodoroScreen = () => {
   const resetTimer = () => {
     setIsActive(false);
     setIsWorkSession(true);
-    setMinutes(WORK_MINUTES);
+    setMinutes(workDuration);
     setSeconds(0);
     setCompletedSessions(0);
     if (intervalRef.current) {
@@ -204,7 +285,7 @@ const PomodoroScreen = () => {
   };
 
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  const totalPhaseSeconds = (isWorkSession ? WORK_MINUTES : BREAK_MINUTES) * 60;
+  const totalPhaseSeconds = (isWorkSession ? workDuration : breakDuration) * 60;
   const remainingSeconds = minutes * 60 + seconds;
   const progressRatio = Math.min(1, Math.max(0, (totalPhaseSeconds - remainingSeconds) / totalPhaseSeconds));
   const completedForDisplay = Math.min(completedSessions, TOTAL_SESSIONS);
@@ -287,16 +368,51 @@ const PomodoroScreen = () => {
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.cardTitle}>Durées</Text>
+          <Text style={styles.cardSubtitle}>Personnalisez vos intervalles de travail et de pause.</Text>
+          <View style={styles.durationRow}>
+            <View style={styles.durationField}>
+              <Text style={styles.durationLabel}>Session (min)</Text>
+              <TextInput
+                style={styles.durationInput}
+                value={workDurationInput}
+                onChangeText={handleWorkDurationChange}
+                onBlur={handleWorkDurationBlur}
+                keyboardType="number-pad"
+                maxLength={3}
+                editable={!isActive}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+            </View>
+            <View style={styles.durationField}>
+              <Text style={styles.durationLabel}>Pause (min)</Text>
+              <TextInput
+                style={styles.durationInput}
+                value={breakDurationInput}
+                onChangeText={handleBreakDurationChange}
+                onBlur={handleBreakDurationBlur}
+                keyboardType="number-pad"
+                maxLength={3}
+                editable={!isActive}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.cardTitle}>Résumé</Text>
           <View style={styles.statRow}>
             <Ionicons name="flame-outline" size={18} color={colors.primary} />
             <Text style={styles.statLabel}>Durée des sessions</Text>
-            <Text style={styles.statValue}>{WORK_MINUTES} min</Text>
+            <Text style={styles.statValue}>{workDuration} min</Text>
           </View>
           <View style={styles.statRow}>
             <Ionicons name="leaf-outline" size={18} color={colors.secondary} />
             <Text style={styles.statLabel}>Durée des pauses</Text>
-            <Text style={styles.statValue}>{BREAK_MINUTES} min</Text>
+            <Text style={styles.statValue}>{breakDuration} min</Text>
           </View>
           <View style={styles.statRow}>
             <Ionicons name="trail-sign-outline" size={18} color={colors.secondary} />
@@ -435,6 +551,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
   },
+  cardSubtitle: {
+    fontSize: fontSizes.body,
+    color: colors.secondary,
+  },
   input: {
     borderWidth: 1,
     borderColor: colors.lightGray,
@@ -442,6 +562,28 @@ const styles = StyleSheet.create({
     padding: spacing.medium,
     backgroundColor: colors.white,
     fontSize: fontSizes.body,
+  },
+  durationRow: {
+    flexDirection: 'row',
+    gap: spacing.medium,
+  },
+  durationField: {
+    flex: 1,
+  },
+  durationLabel: {
+    fontSize: fontSizes.body,
+    color: colors.secondary,
+    marginBottom: spacing.small / 2,
+  },
+  durationInput: {
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+    borderRadius: 10,
+    paddingVertical: spacing.small,
+    paddingHorizontal: spacing.medium,
+    backgroundColor: colors.white,
+    fontSize: fontSizes.subtitle,
+    textAlign: 'center',
   },
   statRow: {
     flexDirection: 'row',

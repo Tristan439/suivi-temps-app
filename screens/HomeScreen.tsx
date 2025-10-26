@@ -518,102 +518,108 @@ const HomeScreen = () => {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {loading && !manualModalVisible && !entryModalVisible ? (
-          <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <View style={{ flex: 1 }}>
+          {loading && !manualModalVisible && !entryModalVisible ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : (
             <ScrollView
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
               <View style={styles.headerCard}>
-              <Text style={styles.headerLabel}>Stage</Text>
-              <SelectInput
-                value={selectedStage}
-                onValueChange={setSelectedStage}
-              options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
-              placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
-            />
+                <Text style={styles.headerLabel}>Stage</Text>
+                <SelectInput
+                  value={selectedStage}
+                  onValueChange={setSelectedStage}
+                  options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
+                  placeholder={
+                    stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'
+                  }
+                />
 
-            <View style={styles.monthSelector}>
-              <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(-1)}>
-                <Ionicons name="chevron-back" size={20} color={colors.primary} />
-              </TouchableOpacity>
-              <Text style={styles.monthText}>
-                {date.toLocaleString('default', { month: 'long', year: 'numeric' })}
-              </Text>
-              <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(1)}>
-                <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
+                <View style={styles.monthSelector}>
+                  <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(-1)}>
+                    <Ionicons name="chevron-back" size={20} color={colors.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.monthText}>
+                    {date.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                  </Text>
+                  <TouchableOpacity style={styles.monthButton} onPress={() => changeMonth(1)}>
+                    <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.summaryBadge}>
-              <Ionicons name="hourglass-outline" size={18} color={colors.primary} />
-              <Text style={styles.summaryText}>
-                Cumul mensuel: {totalSeconds > 0 ? secondsToHuman(totalSeconds) : '0 min'}
-              </Text>
-            </View>
-          </View>
-
-          {CATEGORY_SECTIONS.map((section) => renderSection(section))}
-
-          {(unknownCumuls.length > 0 || unknownEntries.length > 0) && (
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Autres catégories</Text>
+                <View style={styles.summaryBadge}>
+                  <Ionicons name="hourglass-outline" size={18} color={colors.primary} />
+                  <Text style={styles.summaryText}>
+                    Cumul mensuel: {totalSeconds > 0 ? secondsToHuman(totalSeconds) : '0 min'}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.sectionRows}>
-                {unknownCumuls.map(([key, value]) => (
-                  <View key={key} style={styles.sectionRow}>
-                    <View style={styles.rowInfo}>
-                      <View style={styles.rowHeader}>
-                        <Text style={styles.rowLabel}>{getCategoryLabel(key)}</Text>
-                        <View style={styles.rowTotalBadge}>
-                          <Ionicons name="time-outline" size={14} color={colors.primary} />
-                          <Text style={styles.rowTotalText}>{secondsToHuman(value)}</Text>
+
+              {CATEGORY_SECTIONS.map((section) => renderSection(section))}
+
+              {(unknownCumuls.length > 0 || unknownEntries.length > 0) && (
+                <View style={styles.sectionCard}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Autres catégories</Text>
+                  </View>
+                  <View style={styles.sectionRows}>
+                    {unknownCumuls.map(([key, value]) => (
+                      <View key={key} style={styles.sectionRow}>
+                        <View style={styles.rowInfo}>
+                          <View style={styles.rowHeader}>
+                            <Text style={styles.rowLabel}>{getCategoryLabel(key)}</Text>
+                            <View style={styles.rowTotalBadge}>
+                              <Ionicons name="time-outline" size={14} color={colors.primary} />
+                              <Text style={styles.rowTotalText}>{secondsToHuman(value)}</Text>
+                            </View>
+                          </View>
                         </View>
                       </View>
-                    </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-              <View style={styles.historyContainer}>
-                <View style={styles.historyHeader}>
-                  <Ionicons name="time-outline" size={18} color={colors.secondary} />
-                  <Text style={styles.historyTitle}>Historique</Text>
+                  <View style={styles.historyContainer}>
+                    <View style={styles.historyHeader}>
+                      <Ionicons name="time-outline" size={18} color={colors.secondary} />
+                      <Text style={styles.historyTitle}>Historique</Text>
+                    </View>
+                    {renderHistoryList(unknownEntries)}
+                  </View>
                 </View>
-                {renderHistoryList(unknownEntries)}
-              </View>
-            </View>
-          )}
+              )}
 
-          <TouchableOpacity style={[styles.primaryButton, styles.globalManualButton]} onPress={() => openManualModal()}>
-            <Ionicons name="add-circle-outline" size={20} color={colors.white} />
-            <Text style={styles.primaryButtonText}>Ajouter une entrée manuelle</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryButton, styles.globalManualButton]}
+                onPress={() => openManualModal()}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={colors.white} />
+                <Text style={styles.primaryButtonText}>Ajouter une entrée manuelle</Text>
+              </TouchableOpacity>
             </ScrollView>
-          </TouchableWithoutFeedback>
-        )}
+          )}
+        </View>
 
-      <Modal
-        animationType="slide"
-        transparent
-        visible={manualModalVisible}
-        onRequestClose={() => setManualModalVisible(false)}
-      >
-        <TouchableWithoutFeedback
-          accessible={false}
-          onPress={() => {
-            Keyboard.dismiss();
-            setManualModalVisible(false);
-            setManualDatePickerVisible(false);
-          }}
+        <Modal
+          animationType="slide"
+          transparent
+          visible={manualModalVisible}
+          onRequestClose={() => setManualModalVisible(false)}
         >
-          <View style={styles.centeredView}>
-            <TouchableWithoutFeedback accessible={false} onPress={() => {}}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.centeredView}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                contentContainerStyle={styles.modalScrollView}
+              >
               <View style={styles.modalView}>
                 <Text style={styles.modalTitle}>Ajouter une entrée</Text>
                 <SelectInput
@@ -696,26 +702,27 @@ const HomeScreen = () => {
                   <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
                 </TouchableOpacity>
               </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        animationType="slide"
-        transparent
-        visible={entryModalVisible}
-        onRequestClose={closeEntryModal}
-      >
-        <TouchableWithoutFeedback
-          accessible={false}
-          onPress={() => {
-            Keyboard.dismiss();
-            closeEntryModal();
-          }}
+        <Modal
+          animationType="slide"
+          transparent
+          visible={entryModalVisible}
+          onRequestClose={closeEntryModal}
         >
-          <View style={styles.centeredView}>
-            <TouchableWithoutFeedback accessible={false} onPress={() => {}}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.centeredView}
+          >
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                contentContainerStyle={styles.modalScrollView}
+              >
               <View style={styles.modalView}>
                 <Text style={styles.modalTitle}>Modifier l'entrée</Text>
                 {entryDateInfo ? <Text style={styles.modalSubtitle}>{entryDateInfo}</Text> : null}
@@ -809,10 +816,11 @@ const HomeScreen = () => {
                   <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
                 </TouchableOpacity>
               </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1071,8 +1079,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
     paddingHorizontal: spacing.large,
   },
+  modalScrollView: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.large * 2,
+  },
   modalView: {
-    width: '100%',
+    width: '90%',
+    maxWidth: 420,
+    alignSelf: 'center',
     backgroundColor: colors.white,
     borderRadius: 16,
     padding: spacing.large,
