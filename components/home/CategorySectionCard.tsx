@@ -92,17 +92,23 @@ const CategorySectionCard: React.FC<CategorySectionCardProps> = ({
             </View>
             <View style={styles.rowSubTotals}>
               <View style={[styles.rowSubBadge, styles.rowSubBadgeIntervention]}>
-                <Text style={[styles.rowSubBadgeLabel, styles.rowSubBadgeInterventionLabel]}>Intervention</Text>
+                <Text style={[styles.rowSubBadgeLabel, styles.rowSubBadgeInterventionLabel]}>
+                  {section.id === 'supervision' ? 'Total' : 'Intervention'}
+                </Text>
                 <Text style={[styles.rowSubBadgeValue, styles.rowSubBadgeInterventionValue]}>
-                  {formatDuration(row.interventionSeconds)}
+                  {section.id === 'supervision'
+                    ? formatDuration(row.totalSeconds)
+                    : formatDuration(row.interventionSeconds)}
                 </Text>
               </View>
-              <View style={[styles.rowSubBadge, styles.rowSubBadgeEvaluation]}>
-                <Text style={[styles.rowSubBadgeLabel, styles.rowSubBadgeEvaluationLabel]}>Évaluation</Text>
-                <Text style={[styles.rowSubBadgeValue, styles.rowSubBadgeEvaluationValue]}>
-                  {formatDuration(row.evaluationSeconds)}
-                </Text>
-              </View>
+              {section.id !== 'supervision' && (
+                <View style={[styles.rowSubBadge, styles.rowSubBadgeEvaluation]}>
+                  <Text style={[styles.rowSubBadgeLabel, styles.rowSubBadgeEvaluationLabel]}>Évaluation</Text>
+                  <Text style={[styles.rowSubBadgeValue, styles.rowSubBadgeEvaluationValue]}>
+                    {formatDuration(row.evaluationSeconds)}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </View>

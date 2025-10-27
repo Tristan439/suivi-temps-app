@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { colors, fontSizes, spacing } from '../styles/global';
+import HistoryList, { HistoryEntry } from '../components/home/HistoryList';
 import {
   addTaskCard,
   addTaskList,
@@ -27,10 +28,17 @@ import {
   updateTaskCard,
   updateTaskList,
 } from '../services/firebase';
+import {
+  getCategoryLabel,
+  getSubCategoryLabel,
+  SUB_CATEGORY_KEYS,
+  SubCategoryKey,
+} from '../constants/categories';
 
 interface TaskCard {
   id: string;
   title: string;
+  completed?: boolean;
 }
 
 interface TaskList {
@@ -47,6 +55,7 @@ interface TaskEntry {
   categorie?: string;
   stageId?: string;
   type?: string;
+  subCategorie?: SubCategoryKey;
 }
 
 const toDate = (value: any) => {
@@ -74,6 +83,8 @@ const secondsToHuman = (seconds = 0) => {
   return `${hours} h ${minutes.toString().padStart(2, '0')} min`;
 };
 
+const DOUBLE_TAP_DELAY = 280;
+
 const TasksScreen = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -99,11 +110,42 @@ const TasksScreen = () => {
   const [cardEntries, setCardEntries] = useState<TaskEntry[]>([]);
   const [cardEntriesLoading, setCardEntriesLoading] = useState(false);
 
+  const lastCardPressRef = useRef<{ id: string; time: number } | null>(null);
+  const cardPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cardPressTimeoutRef.current) {
+        clearTimeout(cardPressTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const isAddListDisabled = useMemo(() => newListTitle.trim().length === 0, [newListTitle]);
   const totalTrackedSeconds = useMemo(
     () => cardEntries.reduce((acc, entry) => acc + (entry.dureeSecondes ?? 0), 0),
     [cardEntries],
   );
+  const historyEntries = useMemo<HistoryEntry[]>(
+    () =>
+      cardEntries.map((entry) => {
+        const maybeSub = entry.subCategorie;
+        const normalizedSubCategorie =
+          maybeSub && SUB_CATEGORY_KEYS.has(maybeSub as SubCategoryKey)
+            ? (maybeSub as SubCategoryKey)
+            : undefined;
+        return {
+          id: entry.id,
+          date: entry.date,
+          description: entry.description,
+          dureeSecondes: entry.dureeSecondes ?? 0,
+          categorie: entry.categorie ?? '',
+          subCategorie: normalizedSubCategorie,
+        };
+      }),
+    [cardEntries],
+  );
+  const handleHistoryEntryPress = useCallback((_entry: HistoryEntry) => {}, []);
 
   const fetchLists = useCallback(async () => {
     setLoading(true);
@@ -113,7 +155,11 @@ const TasksScreen = () => {
         fetched.map((list) => ({
           id: list.id,
           title: list.title,
-          cards: (list.cards || []).map((card) => ({ id: card.id, title: card.title })),
+          cards: (list.cards || []).map((card) => ({
+            id: card.id,
+            title: card.title,
+            completed: !!card.completed,
+          })),
         })),
       );
       setCardInputs({});
@@ -302,11 +348,14 @@ const TasksScreen = () => {
     [],
   );
 
-  const openCardDetails = (list: TaskList, card: TaskCard) => {
-    setCardDetails({ listId: list.id, listTitle: list.title, card });
-    setCardEntries([]);
-    loadCardEntries(card).catch(() => {});
-  };
+  const openCardDetails = useCallback(
+    (list: TaskList, card: TaskCard) => {
+      setCardDetails({ listId: list.id, listTitle: list.title, card });
+      setCardEntries([]);
+      loadCardEntries(card).catch(() => {});
+    },
+    [loadCardEntries],
+  );
 
   const closeCardDetails = () => {
     setCardDetails(null);
@@ -340,6 +389,80 @@ const TasksScreen = () => {
     closeCardDetails();
     setTimeout(() => confirmDeleteCard(listId, card.id), 150);
   };
+
+  const updateLocalCardCompletion = useCallback(
+    (listId: string, cardId: string, completed: boolean) => {
+      setLists((prev) =>
+        prev.map((list) =>
+          list.id === listId
+            ? {
+                ...list,
+                cards: list.cards.map((card) =>
+                  card.id === cardId ? { ...card, completed } : card,
+                ),
+              }
+            : list,
+        ),
+      );
+      setCardDetails((prev) =>
+        prev && prev.card.id === cardId
+          ? { ...prev, card: { ...prev.card, completed } }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const handleToggleCardCompletion = useCallback(
+    async (listId: string, card: TaskCard, nextCompleted: boolean) => {
+      updateLocalCardCompletion(listId, card.id, nextCompleted);
+      try {
+        await updateTaskCard(listId, card.id, { completed: nextCompleted });
+      } catch (error) {
+        console.error('Error updating card completion:', error);
+        Alert.alert('Erreur', "Impossible de mettre à jour l'état de la carte.");
+        updateLocalCardCompletion(listId, card.id, !nextCompleted);
+      }
+    },
+    [updateLocalCardCompletion],
+  );
+
+  const handleCardPress = useCallback(
+    (list: TaskList, card: TaskCard) => {
+      const now = Date.now();
+      if (
+        lastCardPressRef.current &&
+        lastCardPressRef.current.id === card.id &&
+        now - lastCardPressRef.current.time < DOUBLE_TAP_DELAY
+      ) {
+        if (cardPressTimeoutRef.current) {
+          clearTimeout(cardPressTimeoutRef.current);
+          cardPressTimeoutRef.current = null;
+        }
+        lastCardPressRef.current = null;
+        handleToggleCardCompletion(list.id, card, !(card.completed ?? false));
+      } else {
+        if (cardPressTimeoutRef.current) {
+          clearTimeout(cardPressTimeoutRef.current);
+        }
+        lastCardPressRef.current = { id: card.id, time: now };
+        cardPressTimeoutRef.current = setTimeout(() => {
+          openCardDetails(list, card);
+          cardPressTimeoutRef.current = null;
+          lastCardPressRef.current = null;
+        }, DOUBLE_TAP_DELAY);
+      }
+    },
+    [handleToggleCardCompletion, openCardDetails],
+  );
+
+  const handleModalToggleCompletion = useCallback(() => {
+    if (!cardDetails) {
+      return;
+    }
+    const { listId, card } = cardDetails;
+    handleToggleCardCompletion(listId, card, !(card.completed ?? false));
+  }, [cardDetails, handleToggleCardCompletion]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -448,12 +571,18 @@ const TasksScreen = () => {
                       key={card.id}
                       style={styles.cardTouchable}
                       activeOpacity={0.9}
-                      onPress={() => openCardDetails(list, card)}
+                      onPress={() => handleCardPress(list, card)}
                     >
-                      <View style={styles.card}>
+                      <View style={[styles.card, card.completed && styles.cardCompleted]}>
                         <View style={styles.cardHeader}>
-                          <Text style={styles.cardTitle}>{card.title}</Text>
-                          <Ionicons name="information-circle-outline" size={18} color={colors.secondary} />
+                          <Text style={[styles.cardTitle, card.completed && styles.cardTitleCompleted]}>
+                            {card.title}
+                          </Text>
+                          <Ionicons
+                            name={card.completed ? 'checkmark-circle' : 'information-circle-outline'}
+                            size={18}
+                            color={card.completed ? '#2F9E44' : colors.secondary}
+                          />
                         </View>
                         <View style={styles.cardQuickActions}>
                           <TouchableOpacity
@@ -555,97 +684,113 @@ const TasksScreen = () => {
           <View style={styles.modalBackdrop}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.modalContent}>
-                <View style={styles.modalHeader}>
-                  <View>
-                    <Text style={styles.modalTitle}>{cardDetails?.card.title}</Text>
-                    <Text style={styles.modalSubtitle}>
-                      {cardDetails ? `Liste : ${cardDetails.listTitle}` : ''}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={closeCardDetails} hitSlop={8}>
-                    <Ionicons name="close" size={22} color={colors.darkGray} />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.modalSummaryRow}>
-                  <Ionicons name="time-outline" size={18} color={colors.primary} />
-                  <Text style={styles.modalSummaryLabel}>Temps suivi</Text>
-                  <Text style={styles.modalSummaryValue}>{secondsToHuman(totalTrackedSeconds)}</Text>
-                </View>
-
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={[styles.modalActionButton, styles.modalEditButton]}
-                    onPress={handleModalEdit}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="pencil" size={18} color={colors.white} />
-                    <Text style={styles.modalActionText}>Modifier</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalActionButton, styles.modalDeleteButton]}
-                    onPress={handleModalDelete}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="trash" size={18} color={colors.white} />
-                    <Text style={styles.modalActionText}>Supprimer</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.modalRefreshButton}
-                  onPress={() => cardDetails && loadCardEntries(cardDetails.card)}
-                  activeOpacity={0.85}
-                  disabled={cardEntriesLoading}
+                <ScrollView
+                  contentContainerStyle={styles.modalScrollContent}
+                  showsVerticalScrollIndicator={false}
                 >
-                  <Ionicons
-                    name="refresh"
-                    size={16}
-                    color={cardEntriesLoading ? 'rgba(255,255,255,0.7)' : colors.white}
-                  />
-                  <Text style={styles.modalRefreshText}>
-                    {cardEntriesLoading ? 'Actualisation...' : 'Actualiser'}
-                  </Text>
-                </TouchableOpacity>
+                  <View style={styles.modalHeader}>
+                    <View>
+                      <Text style={styles.modalTitle}>{cardDetails?.card.title}</Text>
+                      <Text style={styles.modalSubtitle}>
+                        {cardDetails ? `Liste : ${cardDetails.listTitle}` : ''}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={closeCardDetails} hitSlop={8}>
+                      <Ionicons name="close" size={22} color={colors.darkGray} />
+                    </TouchableOpacity>
+                  </View>
 
-                {cardEntriesLoading ? (
-                  <View style={styles.modalLoader}>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                    <Text style={styles.modalLoaderText}>Chargement des entrées...</Text>
+                  {cardDetails && (
+                    <View
+                      style={[
+                        styles.modalStatusBadge,
+                        cardDetails.card.completed
+                          ? styles.modalStatusBadgeCompleted
+                          : styles.modalStatusBadgePending,
+                      ]}
+                    >
+                      <Ionicons
+                        name={cardDetails.card.completed ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={18}
+                        color={cardDetails.card.completed ? '#2F9E44' : colors.secondary}
+                      />
+                      <Text
+                        style={[
+                          styles.modalStatusText,
+                          cardDetails.card.completed && styles.modalStatusTextCompleted,
+                        ]}
+                      >
+                        {cardDetails.card.completed ? 'Complétée' : 'À faire'}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.modalSummaryRow}>
+                    <Ionicons name="time-outline" size={18} color={colors.primary} />
+                    <Text style={styles.modalSummaryLabel}>Temps suivi</Text>
+                    <Text style={styles.modalSummaryValue}>{secondsToHuman(totalTrackedSeconds)}</Text>
                   </View>
-                ) : cardEntries.length === 0 ? (
-                  <View style={styles.modalEmpty}>
-                    <Ionicons name="moon-outline" size={24} color={colors.secondary} />
-                    <Text style={styles.modalEmptyText}>
-                      Aucune entrée liée à cette carte pour l&apos;instant.
-                    </Text>
+
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalActionButton,
+                        cardDetails?.card.completed
+                          ? styles.modalMarkIncompleteButton
+                          : styles.modalMarkCompleteButton,
+                      ]}
+                      onPress={handleModalToggleCompletion}
+                      activeOpacity={0.85}
+                      accessibilityLabel={
+                        cardDetails?.card.completed ? 'Marquer la tâche comme incomplète' : 'Marquer la tâche comme complétée'
+                      }
+                    >
+                      <Ionicons
+                        name={cardDetails?.card.completed ? 'refresh-circle' : 'checkmark-circle'}
+                        size={20}
+                        color={colors.white}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalActionButton, styles.modalEditButton]}
+                      onPress={handleModalEdit}
+                      activeOpacity={0.85}
+                      accessibilityLabel="Modifier la tâche"
+                    >
+                      <Ionicons name="pencil" size={20} color={colors.white} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalActionButton, styles.modalDeleteButton]}
+                      onPress={handleModalDelete}
+                      activeOpacity={0.85}
+                      accessibilityLabel="Supprimer la tâche"
+                    >
+                      <Ionicons name="trash" size={20} color={colors.white} />
+                    </TouchableOpacity>
                   </View>
-                ) : (
-                  <ScrollView style={styles.modalEntries}>
-                    {cardEntries.map((entry) => (
-                      <View key={entry.id} style={styles.modalEntryRow}>
-                        <View style={styles.modalEntryHeader}>
-                          <Text style={styles.modalEntryDate}>{formatEntryTimestamp(entry.date)}</Text>
-                          <Text style={styles.modalEntryDuration}>
-                            {secondsToHuman(entry.dureeSecondes ?? 0)}
-                          </Text>
-                        </View>
-                        {!!entry.description && (
-                          <Text style={styles.modalEntryDescription}>{entry.description}</Text>
-                        )}
-                        <View style={styles.modalEntryMeta}>
-                          <Ionicons name="flame-outline" size={14} color={colors.secondary} />
-                          <Text style={styles.modalEntryType}>
-                            {(entry.type === 'pomodoro-stop' && 'Pomodoro (arrêt)')
-                              || (entry.type === 'pomodoro' && 'Pomodoro')
-                              || (entry.type === 'chrono' && 'Chrono')
-                              || 'Manuel'}
-                          </Text>
-                        </View>
+
+                  <View style={styles.modalHistorySection}>
+                    <View style={styles.modalHistoryHeader}>
+                      <Ionicons name="time-outline" size={18} color={colors.secondary} />
+                      <Text style={styles.modalHistoryTitle}>Historique</Text>
+                    </View>
+                    {cardEntriesLoading ? (
+                      <View style={styles.modalLoader}>
+                        <ActivityIndicator size="small" color={colors.primary} />
+                        <Text style={styles.modalLoaderText}>Chargement des entrées...</Text>
                       </View>
-                    ))}
-                  </ScrollView>
-                )}
+                    ) : (
+                      <HistoryList
+                        entries={historyEntries}
+                        onSelectEntry={handleHistoryEntryPress}
+                        formatTimestamp={formatEntryTimestamp}
+                        formatDuration={secondsToHuman}
+                        resolveCategoryLabel={getCategoryLabel}
+                        resolveSubCategoryLabel={getSubCategoryLabel}
+                      />
+                    )}
+                  </View>
+                </ScrollView>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -739,12 +884,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: spacing.medium,
     paddingHorizontal: spacing.medium,
+    borderWidth: 1,
+    borderColor: 'transparent',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
     gap: spacing.small,
+  },
+  cardCompleted: {
+    backgroundColor: '#e6f4ea',
+    borderColor: '#2F9E44',
+    shadowColor: 'rgba(47, 158, 68, 0.35)',
   },
   cardQuickActions: {
     flexDirection: 'row',
@@ -760,6 +912,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
     flexShrink: 1,
+  },
+  cardTitleCompleted: {
+    color: '#2F9E44',
   },
   cardPomodoroButton: {
     backgroundColor: colors.primary,
@@ -923,6 +1078,32 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     marginTop: spacing.small / 2,
   },
+  modalStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.small,
+    alignSelf: 'flex-start',
+    paddingVertical: spacing.small / 1.5,
+    paddingHorizontal: spacing.medium,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  modalStatusBadgeCompleted: {
+    backgroundColor: '#e6f4ea',
+    borderColor: '#2F9E44',
+  },
+  modalStatusBadgePending: {
+    backgroundColor: colors.background,
+    borderColor: colors.lightGray,
+  },
+  modalStatusText: {
+    fontSize: fontSizes.body,
+    fontWeight: '600',
+    color: colors.secondary,
+  },
+  modalStatusTextCompleted: {
+    color: '#2F9E44',
+  },
   modalSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -939,18 +1120,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
+  modalScrollContent: {
+    paddingBottom: spacing.large,
+    gap: spacing.medium,
+  },
   modalActions: {
     flexDirection: 'row',
     gap: spacing.small,
   },
   modalActionButton: {
-    flex: 1,
-    flexDirection: 'row',
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.small / 2,
-    paddingVertical: spacing.small * 1.25,
-    borderRadius: 10,
   },
   modalEditButton: {
     backgroundColor: colors.secondary,
@@ -958,25 +1141,11 @@ const styles = StyleSheet.create({
   modalDeleteButton: {
     backgroundColor: '#dc3545',
   },
-  modalActionText: {
-    color: colors.white,
-    fontWeight: '600',
-    fontSize: fontSizes.body,
+  modalMarkCompleteButton: {
+    backgroundColor: '#2F9E44',
   },
-  modalRefreshButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.small,
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.small,
-    paddingHorizontal: spacing.medium,
-    borderRadius: 10,
-  },
-  modalRefreshText: {
-    color: colors.white,
-    fontWeight: '600',
-    fontSize: fontSizes.body,
+  modalMarkIncompleteButton: {
+    backgroundColor: colors.darkGray,
   },
   modalLoader: {
     alignItems: 'center',
@@ -987,53 +1156,21 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontSize: fontSizes.body,
   },
-  modalEmpty: {
-    alignItems: 'center',
-    gap: spacing.small,
-    paddingVertical: spacing.large,
-  },
-  modalEmptyText: {
-    textAlign: 'center',
-    color: colors.secondary,
-    fontSize: fontSizes.body,
-  },
-  modalEntries: {
-    maxHeight: 280,
-  },
-  modalEntryRow: {
-    borderWidth: 1,
-    borderColor: colors.lightGray,
+  modalHistorySection: {
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: spacing.medium,
     gap: spacing.small,
-    marginBottom: spacing.small,
   },
-  modalEntryHeader: {
+  modalHistoryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.small,
   },
-  modalEntryDate: {
-    color: colors.secondary,
-    fontSize: fontSizes.body,
-  },
-  modalEntryDuration: {
-    color: colors.text,
-    fontWeight: '600',
+  modalHistoryTitle: {
     fontSize: fontSizes.subtitle,
-  },
-  modalEntryDescription: {
-    color: colors.text,
-    fontSize: fontSizes.body,
-  },
-  modalEntryMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.small / 2,
-  },
-  modalEntryType: {
+    fontWeight: '600',
     color: colors.secondary,
-    fontSize: fontSizes.body,
   },
   disabledButton: {
     opacity: 0.6,

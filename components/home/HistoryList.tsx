@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, fontSizes, spacing } from '../../styles/global';
 import { SubCategoryKey } from '../../constants/categories';
 
@@ -34,7 +34,12 @@ const HistoryList: React.FC<HistoryListProps> = ({
   }
 
   return (
-    <>
+    <ScrollView
+      style={styles.historyScroll}
+      contentContainerStyle={styles.historyScrollContent}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+    >
       {entries.map((entry) => (
         <TouchableOpacity
           key={entry.id}
@@ -55,13 +60,19 @@ const HistoryList: React.FC<HistoryListProps> = ({
           </View>
         </TouchableOpacity>
       ))}
-    </>
+    </ScrollView>
   );
 };
 
 export default HistoryList;
 
 const styles = StyleSheet.create({
+  historyScroll: {
+    maxHeight: 210,
+  },
+  historyScrollContent: {
+    paddingBottom: spacing.small,
+  },
   historyRow: {
     width: '100%',
     flexDirection: 'row',

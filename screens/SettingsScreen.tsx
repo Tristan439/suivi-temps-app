@@ -2,11 +2,13 @@ import React, { useCallback } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { signOut } from 'firebase/auth';
 
 import PreferencesCard from '../components/settings/PreferencesCard';
 import StagesCard from '../components/settings/StagesCard';
 import useSettings from '../hooks/useSettings';
 import { colors, fontSizes, spacing } from '../styles/global';
+import { auth } from '../services/firebase';
 
 const SettingsScreen = () => {
   const {
@@ -33,6 +35,7 @@ const SettingsScreen = () => {
     loadData,
   } = useSettings();
   const insets = useSafeAreaInsets();
+  const [signingOut, setSigningOut] = React.useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -118,6 +121,28 @@ const SettingsScreen = () => {
         >
           <Text style={styles.secondaryButtonText}>Réinitialiser</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.logoutButton, signingOut && styles.disabledButton]}
+          onPress={async () => {
+            if (signingOut) {
+              return;
+            }
+            setSigningOut(true);
+            try {
+              await signOut(auth);
+            } catch (error) {
+              console.error('Error signing out:', error);
+              Alert.alert('Erreur', "La déconnexion a échoué. Veuillez réessayer.");
+            } finally {
+              setSigningOut(false);
+            }
+          }}
+          activeOpacity={0.85}
+          disabled={signingOut}
+        >
+          <Text style={styles.logoutButtonText}>{signingOut ? 'Déconnexion...' : 'Se déconnecter'}</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -168,6 +193,18 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  logoutButton: {
+    marginTop: spacing.large,
+    backgroundColor: '#dc3545',
+    borderRadius: 14,
+    paddingVertical: spacing.medium,
+    alignItems: 'center',
+  },
+  logoutButtonText: {
+    color: colors.white,
+    fontSize: fontSizes.subtitle,
+    fontWeight: '700',
   },
 });
 

@@ -80,6 +80,7 @@ interface TaskCardDoc {
   title: string;
   userId: string;
   createdAt: number;
+  completed?: boolean;
 }
 
 export const addEntreeTemps = async (entree: Omit<EntreeTemps, 'userId'>) => {
@@ -309,6 +310,7 @@ export const addTaskCard = async (listId: string, title: string) => {
       title,
       userId: user.uid,
       createdAt: Date.now(),
+      completed: false,
     });
   } catch (error) {
     console.error('Error adding task card:', error);
@@ -316,7 +318,11 @@ export const addTaskCard = async (listId: string, title: string) => {
   }
 };
 
-export const updateTaskCard = async (listId: string, cardId: string, updates: Partial<Pick<TaskCardDoc, 'title'>>) => {
+export const updateTaskCard = async (
+  listId: string,
+  cardId: string,
+  updates: Partial<Pick<TaskCardDoc, 'title' | 'completed'>>,
+) => {
   try {
     const cardRef = doc(db, 'taskLists', listId, 'cards', cardId);
     await updateDoc(cardRef, updates);

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -115,6 +115,7 @@ const HomeScreen = () => {
   const [cumuls, setCumuls] = useState<{ [key: string]: number }>({});
   const [date, setDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualHours, setManualHours] = useState(0);
@@ -219,47 +220,63 @@ const HomeScreen = () => {
     }, []),
   );
 
-  const fetchData = async () => {
-    setLoading(true);
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-
-    try {
-      const [fetchedEntrees, fetchedCumuls, fetchedStages] = await Promise.all([
-        getEntreesParMois(year, month, selectedStage),
-        getCumulsParCategorie(year, month, selectedStage),
-        getStages(),
-      ]);
-
-      setEntrees(fetchedEntrees as Entree[]);
-      setCumuls(fetchedCumuls);
-      const typedStages = (Array.isArray(fetchedStages) ? fetchedStages : []) as Stage[];
-      setStages(typedStages);
-
-      if (typedStages.length > 0) {
-        const preferredStage =
-          preferredStageId && typedStages.some((stage) => stage.id === preferredStageId)
-            ? preferredStageId
-            : undefined;
-
-        if (!selectedStage) {
-          setSelectedStage(preferredStage ?? typedStages[0].id);
-        } else if (!typedStages.some((stage) => stage.id === selectedStage)) {
-          setSelectedStage(preferredStage ?? typedStages[0].id);
-        }
+  const fetchData = useCallback(
+    async (options: { initial?: boolean } = {}) => {
+      const { initial = false } = options;
+      if (initial) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
       }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      Alert.alert('Erreur', 'Impossible de récupérer les données.');
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+
+      try {
+        const [fetchedEntrees, fetchedCumuls, fetchedStages] = await Promise.all([
+          getEntreesParMois(year, month, selectedStage),
+          getCumulsParCategorie(year, month, selectedStage),
+          getStages(),
+        ]);
+
+        setEntrees(fetchedEntrees as Entree[]);
+        setCumuls(fetchedCumuls);
+        const typedStages = (Array.isArray(fetchedStages) ? fetchedStages : []) as Stage[];
+        setStages(typedStages);
+
+        if (typedStages.length > 0) {
+          const preferredStage =
+            preferredStageId && typedStages.some((stage) => stage.id === preferredStageId)
+              ? preferredStageId
+              : undefined;
+
+          if (!selectedStage) {
+            setSelectedStage(preferredStage ?? typedStages[0].id);
+          } else if (!typedStages.some((stage) => stage.id === selectedStage)) {
+            setSelectedStage(preferredStage ?? typedStages[0].id);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        Alert.alert('Erreur', 'Impossible de récupérer les données.');
+      } finally {
+        if (initial) {
+          setLoading(false);
+        }
+        setRefreshing(false);
+      }
+    },
+    [date, preferredStageId, selectedStage],
+  );
+
+  const hasLoadedOnceRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
-      fetchData();
-    }, [date, selectedStage, preferredStageId]),
+      const initial = !hasLoadedOnceRef.current;
+      fetchData({ initial });
+      hasLoadedOnceRef.current = true;
+    }, [fetchData]),
   );
 
   const totalSeconds = useMemo(
@@ -569,15 +586,22 @@ const HomeScreen = () => {
               <ActivityIndicator size="large" color={colors.primary} />
             </View>
           ) : (
-            <ScrollView
-              contentContainerStyle={[
-                styles.scrollContent,
-                { paddingBottom: insets.bottom + spacing.large * 3 },
-              ]}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-            >
+            <>
+              {refreshing && !manualModalVisible && !entryModalVisible && (
+                <View style={styles.inlineLoader} pointerEvents="none">
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.inlineLoaderText}>Mise à jour...</Text>
+                </View>
+              )}
+              <ScrollView
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingBottom: insets.bottom + spacing.large * 3 },
+                ]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              >
               <View style={styles.headerCard}>
                 <Text style={styles.headerLabel}>Stage</Text>
                 <SelectInput
@@ -721,6 +745,7 @@ const HomeScreen = () => {
                 <Text style={styles.primaryButtonText}>Ajouter une entrée manuelle</Text>
               </TouchableOpacity>
             </ScrollView>
+            </>
           )}
         </View>
 
@@ -732,7 +757,13 @@ const HomeScreen = () => {
         >
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.centeredView}
+            style={[
+              styles.centeredView,
+              {
+                paddingTop: insets.top + spacing.large * 2,
+                paddingBottom: Math.max(insets.bottom, spacing.large),
+              },
+            ]}
           >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <ScrollView
@@ -816,18 +847,25 @@ const HomeScreen = () => {
                   onChangeText={setManualDescription}
                   style={styles.input}
                 />
-                <TouchableOpacity style={styles.primaryButton} onPress={handleAjoutManuel}>
-                  <Text style={styles.primaryButtonText}>Enregistrer</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.primaryButton, styles.secondaryButton]}
-                  onPress={() => {
-                    setManualModalVisible(false);
-                    setManualDatePickerVisible(false);
-                  }}
-                >
-                  <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
-                </TouchableOpacity>
+                <View style={styles.modalIconRow}>
+                  <TouchableOpacity
+                    style={[styles.modalIconButton, styles.modalIconPrimary]}
+                    onPress={handleAjoutManuel}
+                    accessibilityLabel="Enregistrer l'entrée"
+                  >
+                    <Ionicons name="checkmark" size={22} color={colors.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalIconButton, styles.modalIconNeutral]}
+                    onPress={() => {
+                      setManualModalVisible(false);
+                      setManualDatePickerVisible(false);
+                    }}
+                    accessibilityLabel="Annuler"
+                  >
+                    <Ionicons name="close" size={22} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
           </TouchableWithoutFeedback>
@@ -842,7 +880,13 @@ const HomeScreen = () => {
         >
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.centeredView}
+            style={[
+              styles.centeredView,
+              {
+                paddingTop: insets.top + spacing.large * 2,
+                paddingBottom: Math.max(insets.bottom, spacing.large),
+              },
+            ]}
           >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <ScrollView
@@ -934,21 +978,29 @@ const HomeScreen = () => {
                   onChangeText={setEntryDescription}
                   style={styles.input}
                 />
-                <TouchableOpacity style={styles.primaryButton} onPress={handleUpdateEntry}>
-                  <Text style={styles.primaryButtonText}>Enregistrer</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.primaryButton, styles.destructiveButton]}
-                  onPress={confirmDeleteEntry}
-                >
-                  <Text style={styles.primaryButtonText}>Supprimer</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.primaryButton, styles.secondaryButton]}
-                  onPress={closeEntryModal}
-                >
-                  <Text style={[styles.primaryButtonText, styles.secondaryButtonText]}>Annuler</Text>
-                </TouchableOpacity>
+                <View style={styles.modalIconRow}>
+                  <TouchableOpacity
+                    style={[styles.modalIconButton, styles.modalIconPrimary]}
+                    onPress={handleUpdateEntry}
+                    accessibilityLabel="Enregistrer l'entrée"
+                  >
+                    <Ionicons name="checkmark" size={22} color={colors.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalIconButton, styles.modalIconDestructive]}
+                    onPress={confirmDeleteEntry}
+                    accessibilityLabel="Supprimer l'entrée"
+                  >
+                    <Ionicons name="trash" size={22} color={colors.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalIconButton, styles.modalIconNeutral]}
+                    onPress={closeEntryModal}
+                    accessibilityLabel="Annuler"
+                  >
+                    <Ionicons name="close" size={22} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
           </TouchableWithoutFeedback>
@@ -974,6 +1026,29 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  inlineLoader: {
+    position: 'absolute',
+    top: spacing.large,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.medium,
+    paddingVertical: spacing.small,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    gap: spacing.small,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+    zIndex: 2,
+  },
+  inlineLoaderText: {
+    fontSize: fontSizes.body,
+    color: colors.primary,
+    fontWeight: '600',
   },
   headerCard: {
     backgroundColor: colors.white,
@@ -1196,22 +1271,38 @@ const styles = StyleSheet.create({
   globalManualButton: {
     marginTop: spacing.large,
   },
-  secondaryButton: {
+  modalIconRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.small,
+    marginTop: spacing.small,
+  },
+  modalIconButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  modalIconPrimary: {
+    backgroundColor: colors.primary,
+  },
+  modalIconNeutral: {
     backgroundColor: colors.lightGray,
-    marginTop: spacing.small,
   },
-  secondaryButtonText: {
-    color: colors.text,
-  },
-  destructiveButton: {
+  modalIconDestructive: {
     backgroundColor: '#dc3545',
-    marginTop: spacing.small,
   },
   centeredView: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)'
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   modalScrollView: {
     flexGrow: 1,

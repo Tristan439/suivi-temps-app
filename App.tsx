@@ -120,9 +120,9 @@ function MainApp() {
     <Tab.Navigator
       initialRouteName="Accueil"
       tabBar={(props) => <TabBar {...props} />}
-      screenOptions={({ route }) => ({
+      screenOptions={{
         headerShown: false,
-      })}
+      }}
     >
       <Tab.Screen name="Minuteur" component={TimerScreen} />
       <Tab.Screen name="Pomodoro" component={PomodoroScreen} />
