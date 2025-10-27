@@ -94,7 +94,7 @@ const secondsToHuman = (seconds = 0) => {
 
 const formatEntryTimestamp = (value: any) => {
   const date = toDate(value);
-  return `${date.toLocaleDateString()} • ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return date.toLocaleDateString();
 };
 
 const formatDateDisplay = (date: Date) =>
@@ -374,9 +374,9 @@ const HomeScreen = () => {
       setManualDatePickerVisible(false);
     }
     if (selectedDate) {
-      setManualDate(selectedDate);
-    }
-  };
+    setManualDate(selectedDate);
+  }
+};
 
   const handleEntryDateChange = (_event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
@@ -384,9 +384,7 @@ const HomeScreen = () => {
     }
     if (selectedDate) {
       setEntryDate(selectedDate);
-      setEntryDateInfo(
-        `${formatDateDisplay(selectedDate)} • ${selectedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-      );
+      setEntryDateInfo(formatDateDisplay(selectedDate));
     }
   };
 
@@ -450,9 +448,7 @@ const HomeScreen = () => {
     setEntryHours(hours);
     setEntryMinutes(minutes);
     setEntryStage(entry.stageId || selectedStage);
-    setEntryDateInfo(
-      `${formatDateDisplay(entryDate)} • ${entryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-    );
+      setEntryDateInfo(formatDateDisplay(entryDate));
     setEntryDate(entryDate);
     setEntryModalVisible(true);
   };
@@ -634,9 +630,15 @@ const HomeScreen = () => {
                             onValueChange={(value) => setSelectedMonthIndex(Number(value))}
                             style={styles.picker}
                             itemStyle={styles.pickerItem}
+                            themeVariant="light"
                           >
                             {monthOptions.map((option) => (
-                              <Picker.Item key={`month-${option.value}`} label={option.label} value={option.value} />
+                              <Picker.Item
+                                key={`month-${option.value}`}
+                                label={option.label}
+                                value={option.value}
+                                color={colors.text}
+                              />
                             ))}
                           </Picker>
                         </View>
@@ -647,9 +649,15 @@ const HomeScreen = () => {
                             onValueChange={(value) => setSelectedYear(Number(value))}
                             style={styles.picker}
                             itemStyle={styles.pickerItem}
+                            themeVariant="light"
                           >
                             {yearOptions.map((year) => (
-                              <Picker.Item key={`year-${year}`} label={`${year}`} value={year} />
+                              <Picker.Item
+                                key={`year-${year}`}
+                                label={`${year}`}
+                                value={year}
+                                color={colors.text}
+                              />
                             ))}
                           </Picker>
                         </View>
@@ -802,6 +810,8 @@ const HomeScreen = () => {
                       mode="date"
                       display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                       onChange={handleManualDateChange}
+                      themeVariant="light"
+                      textColor={Platform.OS === 'ios' ? colors.text : undefined}
                     />
                     {Platform.OS === 'ios' && (
                       <TouchableOpacity
@@ -821,9 +831,15 @@ const HomeScreen = () => {
                       onValueChange={(value) => setManualHours(value)}
                       style={styles.picker}
                       itemStyle={styles.pickerItem}
+                      themeVariant="light"
                     >
                       {Array.from({ length: 24 }).map((_, idx) => (
-                        <Picker.Item key={`manual-hours-${idx}`} label={`${idx}`} value={idx} />
+                        <Picker.Item
+                          key={`manual-hours-${idx}`}
+                          label={`${idx}`}
+                          value={idx}
+                          color={colors.text}
+                        />
                       ))}
                     </Picker>
                   </View>
@@ -834,9 +850,15 @@ const HomeScreen = () => {
                       onValueChange={(value) => setManualMinutes(value)}
                       style={styles.picker}
                       itemStyle={styles.pickerItem}
+                      themeVariant="light"
                     >
                       {Array.from({ length: 60 }).map((_, idx) => (
-                        <Picker.Item key={`manual-minutes-${idx}`} label={`${idx}`} value={idx} />
+                        <Picker.Item
+                          key={`manual-minutes-${idx}`}
+                          label={`${idx}`}
+                          value={idx}
+                          color={colors.text}
+                        />
                       ))}
                     </Picker>
                   </View>
@@ -933,6 +955,8 @@ const HomeScreen = () => {
                       mode="date"
                       display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                       onChange={handleEntryDateChange}
+                      themeVariant="light"
+                      textColor={Platform.OS === 'ios' ? colors.text : undefined}
                     />
                     {Platform.OS === 'ios' && (
                       <TouchableOpacity
@@ -952,9 +976,15 @@ const HomeScreen = () => {
                       onValueChange={(value) => setEntryHours(value)}
                       style={styles.picker}
                       itemStyle={styles.pickerItem}
+                      themeVariant="light"
                     >
                       {Array.from({ length: 24 }).map((_, idx) => (
-                        <Picker.Item key={`entry-hours-${idx}`} label={`${idx}`} value={idx} />
+                        <Picker.Item
+                          key={`entry-hours-${idx}`}
+                          label={`${idx}`}
+                          value={idx}
+                          color={colors.text}
+                        />
                       ))}
                     </Picker>
                   </View>
@@ -965,9 +995,15 @@ const HomeScreen = () => {
                       onValueChange={(value) => setEntryMinutes(value)}
                       style={styles.picker}
                       itemStyle={styles.pickerItem}
+                      themeVariant="light"
                     >
                       {Array.from({ length: 60 }).map((_, idx) => (
-                        <Picker.Item key={`entry-minutes-${idx}`} label={`${idx}`} value={idx} />
+                        <Picker.Item
+                          key={`entry-minutes-${idx}`}
+                          label={`${idx}`}
+                          value={idx}
+                          color={colors.text}
+                        />
                       ))}
                     </Picker>
                   </View>
@@ -1310,10 +1346,11 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     width: '100%',
     paddingVertical: spacing.large,
+    paddingHorizontal: spacing.large,
   },
   modalView: {
     width: '100%',
-    maxWidth: 640,
+    maxWidth: 520,
     alignSelf: 'center',
     backgroundColor: colors.white,
     borderRadius: 16,
@@ -1360,6 +1397,7 @@ const styles = StyleSheet.create({
   },
   pickerItem: {
     fontSize: fontSizes.title,
+    color: colors.text,
   },
   dateButton: {
     flexDirection: 'row',
@@ -1376,10 +1414,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   datePickerWrapper: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.white,
     borderRadius: 12,
     paddingVertical: spacing.small,
     marginBottom: spacing.small,
+    borderWidth: 1,
+    borderColor: colors.lightGray,
   },
   datePickerClose: {
     alignSelf: 'flex-end',
