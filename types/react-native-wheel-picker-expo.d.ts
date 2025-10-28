@@ -23,5 +23,7 @@ declare module 'react-native-wheel-picker-expo' {
     onChange?: (event: WheelPickerChangeEvent<TValue>) => void;
   }
 
-  export const WheelPickerExpo: ComponentType<WheelPickerExpoProps>;
+    const WheelPickerExpo: ComponentType<WheelPickerExpoProps>;
+  export default WheelPickerExpo;
+
 }

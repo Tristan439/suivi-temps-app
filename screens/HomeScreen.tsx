@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { WheelPickerExpo } from 'react-native-wheel-picker-expo';
+import WheelPickerExpo from 'react-native-wheel-picker-expo';
 
 import {
   addEntreeTemps,
