@@ -2,7 +2,6 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Modal,
   Keyboard,
   ScrollView,
@@ -806,156 +805,145 @@ const HomeScreen = () => {
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View style={styles.modalContainer}>
                 <View style={[styles.modalView, { maxHeight: modalMaxHeight }]}>
-                  <FlatList
+                  <ScrollView
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="on-drag"
                     contentContainerStyle={styles.modalContent}
                     directionalLockEnabled
                     showsHorizontalScrollIndicator={false}
-                    showsVerticalScrollIndicator={false}
                     alwaysBounceHorizontal={false}
-                    data={[]}
-                    keyExtractor={(_, index) => index.toString()}
-                    renderItem={null}
-                    ListHeaderComponent={
-                      <>
-                        <Text style={styles.modalTitle}>Ajouter une entrée</Text>
-                        <SelectInput
-                          value={manualCategorie}
-                          options={manualCategoryOptions}
-                          onValueChange={setManualCategorie}
-                          placeholder="Catégorie"
-                          style={styles.modalSelect}
+                  >
+                    <Text style={styles.modalTitle}>Ajouter une entrée</Text>
+                    <SelectInput
+                      value={manualCategorie}
+                      options={manualCategoryOptions}
+                      onValueChange={setManualCategorie}
+                      placeholder="Catégorie"
+                      style={styles.modalSelect}
+                    />
+                    <SelectInput
+                      value={manualSubCategory}
+                      options={manualSubCategoryOptions}
+                      onValueChange={(value) => setManualSubCategory(value as SubCategoryKey)}
+                      placeholder="Sous-catégorie"
+                      style={styles.modalSelect}
+                    />
+                    <TouchableOpacity
+                      style={styles.dateButton}
+                      onPress={() => setManualDatePickerVisible(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="calendar" size={18} color={colors.primary} />
+                      <Text style={styles.dateButtonText}>{formatDateDisplay(manualDate)}</Text>
+                    </TouchableOpacity>
+                    {manualDatePickerVisible && (
+                      <View style={styles.datePickerWrapper}>
+                        <DateTimePicker
+                          value={manualDate}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          onChange={handleManualDateChange}
+                          themeVariant="light"
+                          textColor={Platform.OS === 'ios' ? colors.text : undefined}
                         />
-                        <SelectInput
-                          value={manualSubCategory}
-                          options={manualSubCategoryOptions}
-                          onValueChange={(value) => setManualSubCategory(value as SubCategoryKey)}
-                          placeholder="Sous-catégorie"
-                          style={styles.modalSelect}
-                        />
-                        <TouchableOpacity
-                          style={styles.dateButton}
-                          onPress={() => setManualDatePickerVisible(true)}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="calendar" size={18} color={colors.primary} />
-                          <Text style={styles.dateButtonText}>{formatDateDisplay(manualDate)}</Text>
-                        </TouchableOpacity>
-                        {manualDatePickerVisible && (
-                          <View style={styles.datePickerWrapper}>
-                            <DateTimePicker
-                              value={manualDate}
-                              mode="date"
-                              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                              onChange={handleManualDateChange}
-                              themeVariant="light"
-                              textColor={Platform.OS === 'ios' ? colors.text : undefined}
-                            />
-                            {Platform.OS === 'ios' && (
-                              <TouchableOpacity
-                                style={styles.datePickerClose}
-                                onPress={() => setManualDatePickerVisible(false)}
-                              >
-                                <Text style={styles.datePickerCloseText}>Terminer</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
+                        {Platform.OS === 'ios' && (
+                          <TouchableOpacity
+                            style={styles.datePickerClose}
+                            onPress={() => setManualDatePickerVisible(false)}
+                          >
+                            <Text style={styles.datePickerCloseText}>Terminer</Text>
+                          </TouchableOpacity>
                         )}
-                        <View style={styles.durationPickerContainer}>
-                          <View style={styles.pickerColumn}>
-                            <Text style={styles.pickerLabel}>Heures</Text>
-                            {Platform.OS === 'android' ? (
-                              <WheelPickerExpo
-                                height={150}
-                                width={110}
-                                items={hourWheelItems}
-                                selectedIndex={manualHours}
-                                onChange={({ itemIndex }: { itemIndex: number }) =>
-                                  setManualHours(itemIndex)
-                                }
-                                backgroundColor={colors.background}
-                              />
-                            ) : (
-                              <Picker
-                                selectedValue={manualHours}
-                                onValueChange={(value) => setManualHours(value)}
-                                style={styles.picker}
-                                itemStyle={styles.pickerItem}
-                                themeVariant="light"
-                              >
-                                {Array.from({ length: 24 }).map((_, idx) => (
-                                  <Picker.Item
-                                    key={`manual-hours-${idx}`}
-                                    label={`${idx}`}
-                                    value={idx}
-                                    color={colors.text}
-                                  />
-                                ))}
-                              </Picker>
-                            )}
-                          </View>
-                          <View style={styles.pickerColumn}>
-                            <Text style={styles.pickerLabel}>Minutes</Text>
-                            {Platform.OS === 'android' ? (
-                              <WheelPickerExpo
-                                height={150}
-                                width={110}
-                                items={minuteWheelItems}
-                                selectedIndex={manualMinutes}
-                                onChange={({ itemIndex }: { itemIndex: number }) =>
-                                  setManualMinutes(itemIndex)
-                                }
-                                backgroundColor={colors.background}
-                              />
-                            ) : (
-                              <Picker
-                                selectedValue={manualMinutes}
-                                onValueChange={(value) => setManualMinutes(value)}
-                                style={styles.picker}
-                                itemStyle={styles.pickerItem}
-                                themeVariant="light"
-                              >
-                                {Array.from({ length: 60 }).map((_, idx) => (
-                                  <Picker.Item
-                                    key={`manual-minutes-${idx}`}
-                                    label={`${idx}`}
-                                    value={idx}
-                                    color={colors.text}
-                                  />
-                                ))}
-                              </Picker>
-                            )}
-                          </View>
-                        </View>
-                        <TextInput
-                          placeholder="Description"
-                          value={manualDescription}
-                          onChangeText={setManualDescription}
-                          style={styles.input}
-                        />
-                        <View style={styles.modalIconRow}>
-                          <TouchableOpacity
-                            style={[styles.modalIconButton, styles.modalIconPrimary]}
-                            onPress={handleAjoutManuel}
-                            accessibilityLabel="Enregistrer l'entrée"
+                      </View>
+                    )}
+                    <View style={styles.durationPickerContainer}>
+                      <View style={styles.pickerColumn}>
+                        <Text style={styles.pickerLabel}>Heures</Text>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={hourWheelItems}
+                            selectedIndex={manualHours}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setManualHours(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={manualHours}
+                            onValueChange={(value) => setManualHours(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
                           >
-                            <Ionicons name="checkmark" size={22} color={colors.white} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.modalIconButton, styles.modalIconNeutral]}
-                            onPress={() => {
-                              setManualModalVisible(false);
-                              setManualDatePickerVisible(false);
-                            }}
-                            accessibilityLabel="Annuler"
+                            {Array.from({ length: 24 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`manual-hours-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
+                              />
+                            ))}
+                          </Picker>
+                        )}
+                      </View>
+                      <View style={styles.pickerColumn}>
+                        <Text style={styles.pickerLabel}>Minutes</Text>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={minuteWheelItems}
+                            selectedIndex={manualMinutes}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setManualMinutes(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={manualMinutes}
+                            onValueChange={(value) => setManualMinutes(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
                           >
-                            <Ionicons name="close" size={22} color={colors.text} />
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    }
-                  />
+                            {Array.from({ length: 60 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`manual-minutes-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
+                              />
+                            ))}
+                          </Picker>
+                        )}
+                      </View>
+                    </View>
+                    <TextInput
+                      placeholder="Description"
+                      value={manualDescription}
+                      onChangeText={setManualDescription}
+                      style={styles.input}
+                    />
+                    <View style={styles.modalIconRow}>
+                      <TouchableOpacity
+                        style={[styles.modalIconButton, styles.modalIconPrimary]}
+                        onPress={handleAjoutManuel}
+                        accessibilityLabel="Enregistrer l'entrée"
+                      >
+                        <Ionicons name="checkmark" size={22} color={colors.white} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modalIconButton, styles.modalIconNeutral]}
+                        onPress={() => {
+                          setManualModalVisible(false);
+                          setManualDatePickerVisible(false);
+                        }}
+                        accessibilityLabel="Annuler"
+                      >
+                        <Ionicons name="close" size={22} color={colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
                 </View>
               </View>
             </TouchableWithoutFeedback>
@@ -981,170 +969,157 @@ const HomeScreen = () => {
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
               <View style={styles.modalContainer}>
                 <View style={[styles.modalView, { maxHeight: modalMaxHeight }]}>
-                  <FlatList
+                  <ScrollView
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="on-drag"
                     contentContainerStyle={styles.modalContent}
                     directionalLockEnabled
                     showsHorizontalScrollIndicator={false}
-                    showsVerticalScrollIndicator={false}
                     alwaysBounceHorizontal={false}
-                    data={[]}
-                    keyExtractor={(_, index) => index.toString()}
-                    renderItem={null}
-                    ListHeaderComponent={
-                      <>
-                        <Text style={styles.modalTitle}>Modifier l'entrée</Text>
-                        {entryDateInfo ? (
-                          <Text style={styles.modalSubtitle}>{entryDateInfo}</Text>
-                        ) : null}
-                        <SelectInput
-                          value={entryStage}
-                          onValueChange={setEntryStage}
-                          options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
-                          placeholder="Sélectionner un stage"
-                          style={styles.modalSelect}
+                  >
+                    <Text style={styles.modalTitle}>Modifier l'entrée</Text>
+                    {entryDateInfo ? <Text style={styles.modalSubtitle}>{entryDateInfo}</Text> : null}
+                    <SelectInput
+                      value={entryStage}
+                      onValueChange={setEntryStage}
+                      options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
+                      placeholder="Sélectionner un stage"
+                      style={styles.modalSelect}
+                    />
+                    <SelectInput
+                      value={entryCategorie}
+                      options={entryCategoryOptions}
+                      onValueChange={setEntryCategorie}
+                      placeholder="Catégorie"
+                      style={styles.modalSelect}
+                    />
+                    <SelectInput
+                      value={entrySubCategory}
+                      options={entrySubCategoryOptions}
+                      onValueChange={(value) => setEntrySubCategory(value as SubCategoryKey)}
+                      placeholder="Sous-catégorie"
+                      style={styles.modalSelect}
+                    />
+                    <TouchableOpacity
+                      style={styles.dateButton}
+                      onPress={() => setEntryDatePickerVisible(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="calendar" size={18} color={colors.primary} />
+                      <Text style={styles.dateButtonText}>{formatDateDisplay(entryDate)}</Text>
+                    </TouchableOpacity>
+                    {entryDatePickerVisible && (
+                      <View style={styles.datePickerWrapper}>
+                        <DateTimePicker
+                          value={entryDate}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          onChange={handleEntryDateChange}
+                          themeVariant="light"
+                          textColor={Platform.OS === 'ios' ? colors.text : undefined}
                         />
-                        <SelectInput
-                          value={entryCategorie}
-                          options={entryCategoryOptions}
-                          onValueChange={setEntryCategorie}
-                          placeholder="Catégorie"
-                          style={styles.modalSelect}
-                        />
-                        <SelectInput
-                          value={entrySubCategory}
-                          options={entrySubCategoryOptions}
-                          onValueChange={(value) => setEntrySubCategory(value as SubCategoryKey)}
-                          placeholder="Sous-catégorie"
-                          style={styles.modalSelect}
-                        />
-                        <TouchableOpacity
-                          style={styles.dateButton}
-                          onPress={() => setEntryDatePickerVisible(true)}
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="calendar" size={18} color={colors.primary} />
-                          <Text style={styles.dateButtonText}>{formatDateDisplay(entryDate)}</Text>
-                        </TouchableOpacity>
-                        {entryDatePickerVisible && (
-                          <View style={styles.datePickerWrapper}>
-                            <DateTimePicker
-                              value={entryDate}
-                              mode="date"
-                              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                              onChange={handleEntryDateChange}
-                              themeVariant="light"
-                              textColor={Platform.OS === 'ios' ? colors.text : undefined}
-                            />
-                            {Platform.OS === 'ios' && (
-                              <TouchableOpacity
-                                style={styles.datePickerClose}
-                                onPress={() => setEntryDatePickerVisible(false)}
-                              >
-                                <Text style={styles.datePickerCloseText}>Terminer</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
+                        {Platform.OS === 'ios' && (
+                          <TouchableOpacity
+                            style={styles.datePickerClose}
+                            onPress={() => setEntryDatePickerVisible(false)}
+                          >
+                            <Text style={styles.datePickerCloseText}>Terminer</Text>
+                          </TouchableOpacity>
                         )}
-                        <View style={styles.durationPickerContainer}>
-                          <View style={styles.pickerColumn}>
-                            <Text style={styles.pickerLabel}>Heures</Text>
-                            {Platform.OS === 'android' ? (
-                              <WheelPickerExpo
-                                height={150}
-                                width={110}
-                                items={hourWheelItems}
-                                selectedIndex={entryHours}
-                                onChange={({ itemIndex }: { itemIndex: number }) =>
-                                  setEntryHours(itemIndex)
-                                }
-                                backgroundColor={colors.background}
+                      </View>
+                    )}
+                    <View style={styles.durationPickerContainer}>
+                      <View style={styles.pickerColumn}>
+                        <Text style={styles.pickerLabel}>Heures</Text>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={hourWheelItems}
+                            selectedIndex={entryHours}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setEntryHours(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={entryHours}
+                            onValueChange={(value) => setEntryHours(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
+                          >
+                            {Array.from({ length: 24 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`entry-hours-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
                               />
-                            ) : (
-                              <Picker
-                                selectedValue={entryHours}
-                                onValueChange={(value) => setEntryHours(value)}
-                                style={styles.picker}
-                                itemStyle={styles.pickerItem}
-                                themeVariant="light"
-                              >
-                                {Array.from({ length: 24 }).map((_, idx) => (
-                                  <Picker.Item
-                                    key={`entry-hours-${idx}`}
-                                    label={`${idx}`}
-                                    value={idx}
-                                    color={colors.text}
-                                  />
-                                ))}
-                              </Picker>
-                            )}
-                          </View>
-                          <View style={styles.pickerColumn}>
-                            <Text style={styles.pickerLabel}>Minutes</Text>
-                            {Platform.OS === 'android' ? (
-                              <WheelPickerExpo
-                                height={150}
-                                width={110}
-                                items={minuteWheelItems}
-                                selectedIndex={entryMinutes}
-                                onChange={({ itemIndex }: { itemIndex: number }) =>
-                                  setEntryMinutes(itemIndex)
-                                }
-                                backgroundColor={colors.background}
+                            ))}
+                          </Picker>
+                        )}
+                      </View>
+                      <View style={styles.pickerColumn}>
+                        <Text style={styles.pickerLabel}>Minutes</Text>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={minuteWheelItems}
+                            selectedIndex={entryMinutes}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setEntryMinutes(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={entryMinutes}
+                            onValueChange={(value) => setEntryMinutes(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
+                          >
+                            {Array.from({ length: 60 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`entry-minutes-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
                               />
-                            ) : (
-                              <Picker
-                                selectedValue={entryMinutes}
-                                onValueChange={(value) => setEntryMinutes(value)}
-                                style={styles.picker}
-                                itemStyle={styles.pickerItem}
-                                themeVariant="light"
-                              >
-                                {Array.from({ length: 60 }).map((_, idx) => (
-                                  <Picker.Item
-                                    key={`entry-minutes-${idx}`}
-                                    label={`${idx}`}
-                                    value={idx}
-                                    color={colors.text}
-                                  />
-                                ))}
-                              </Picker>
-                            )}
-                          </View>
-                        </View>
-                        <TextInput
-                          placeholder="Description"
-                          value={entryDescription}
-                          onChangeText={setEntryDescription}
-                          style={styles.input}
-                        />
-                        <View style={styles.modalIconRow}>
-                          <TouchableOpacity
-                            style={[styles.modalIconButton, styles.modalIconPrimary]}
-                            onPress={handleUpdateEntry}
-                            accessibilityLabel="Enregistrer l'entrée"
-                          >
-                            <Ionicons name="checkmark" size={22} color={colors.white} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.modalIconButton, styles.modalIconDestructive]}
-                            onPress={confirmDeleteEntry}
-                            accessibilityLabel="Supprimer l'entrée"
-                          >
-                            <Ionicons name="trash" size={22} color={colors.white} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.modalIconButton, styles.modalIconNeutral]}
-                            onPress={closeEntryModal}
-                            accessibilityLabel="Annuler"
-                          >
-                            <Ionicons name="close" size={22} color={colors.text} />
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    }
-                  />
+                            ))}
+                          </Picker>
+                        )}
+                      </View>
+                    </View>
+                    <TextInput
+                      placeholder="Description"
+                      value={entryDescription}
+                      onChangeText={setEntryDescription}
+                      style={styles.input}
+                    />
+                    <View style={styles.modalIconRow}>
+                      <TouchableOpacity
+                        style={[styles.modalIconButton, styles.modalIconPrimary]}
+                        onPress={handleUpdateEntry}
+                        accessibilityLabel="Enregistrer l'entrée"
+                      >
+                        <Ionicons name="checkmark" size={22} color={colors.white} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modalIconButton, styles.modalIconDestructive]}
+                        onPress={confirmDeleteEntry}
+                        accessibilityLabel="Supprimer l'entrée"
+                      >
+                        <Ionicons name="trash" size={22} color={colors.white} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modalIconButton, styles.modalIconNeutral]}
+                        onPress={closeEntryModal}
+                        accessibilityLabel="Annuler"
+                      >
+                        <Ionicons name="close" size={22} color={colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
                 </View>
               </View>
             </TouchableWithoutFeedback>
