@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { WheelPickerExpo } from 'react-native-wheel-picker-expo';
 
 import {
   addEntreeTemps,
@@ -198,6 +199,23 @@ const HomeScreen = () => {
     return Array.from({ length: 21 }, (_, idx) => startYear + idx);
   }, [selectedYear]);
 
+  const hourWheelItems = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, idx) => ({
+        label: `${idx}`,
+        value: idx,
+      })),
+    [],
+  );
+
+  const minuteWheelItems = useMemo(
+    () =>
+      Array.from({ length: 60 }, (_, idx) => ({
+        label: `${idx}`,
+        value: idx,
+      })),
+    [],
+  );
   const modalMaxHeight = useMemo(
     () =>
       Math.max(
@@ -841,41 +859,63 @@ const HomeScreen = () => {
                     <View style={styles.durationPickerContainer}>
                       <View style={styles.pickerColumn}>
                         <Text style={styles.pickerLabel}>Heures</Text>
-                        <Picker
-                          selectedValue={manualHours}
-                          onValueChange={(value) => setManualHours(value)}
-                          style={styles.picker}
-                          itemStyle={styles.pickerItem}
-                          themeVariant="light"
-                        >
-                          {Array.from({ length: 24 }).map((_, idx) => (
-                            <Picker.Item
-                              key={`manual-hours-${idx}`}
-                              label={`${idx}`}
-                              value={idx}
-                              color={colors.text}
-                            />
-                          ))}
-                        </Picker>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={hourWheelItems}
+                            selectedIndex={manualHours}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setManualHours(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={manualHours}
+                            onValueChange={(value) => setManualHours(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
+                          >
+                            {Array.from({ length: 24 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`manual-hours-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
+                              />
+                            ))}
+                          </Picker>
+                        )}
                       </View>
                       <View style={styles.pickerColumn}>
                         <Text style={styles.pickerLabel}>Minutes</Text>
-                        <Picker
-                          selectedValue={manualMinutes}
-                          onValueChange={(value) => setManualMinutes(value)}
-                          style={styles.picker}
-                          itemStyle={styles.pickerItem}
-                          themeVariant="light"
-                        >
-                          {Array.from({ length: 60 }).map((_, idx) => (
-                            <Picker.Item
-                              key={`manual-minutes-${idx}`}
-                              label={`${idx}`}
-                              value={idx}
-                              color={colors.text}
-                            />
-                          ))}
-                        </Picker>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={minuteWheelItems}
+                            selectedIndex={manualMinutes}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setManualMinutes(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={manualMinutes}
+                            onValueChange={(value) => setManualMinutes(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
+                          >
+                            {Array.from({ length: 60 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`manual-minutes-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
+                              />
+                            ))}
+                          </Picker>
+                        )}
                       </View>
                     </View>
                     <TextInput
@@ -991,41 +1031,63 @@ const HomeScreen = () => {
                     <View style={styles.durationPickerContainer}>
                       <View style={styles.pickerColumn}>
                         <Text style={styles.pickerLabel}>Heures</Text>
-                        <Picker
-                          selectedValue={entryHours}
-                          onValueChange={(value) => setEntryHours(value)}
-                          style={styles.picker}
-                          itemStyle={styles.pickerItem}
-                          themeVariant="light"
-                        >
-                          {Array.from({ length: 24 }).map((_, idx) => (
-                            <Picker.Item
-                              key={`entry-hours-${idx}`}
-                              label={`${idx}`}
-                              value={idx}
-                              color={colors.text}
-                            />
-                          ))}
-                        </Picker>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={hourWheelItems}
+                            selectedIndex={entryHours}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setEntryHours(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={entryHours}
+                            onValueChange={(value) => setEntryHours(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
+                          >
+                            {Array.from({ length: 24 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`entry-hours-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
+                              />
+                            ))}
+                          </Picker>
+                        )}
                       </View>
                       <View style={styles.pickerColumn}>
                         <Text style={styles.pickerLabel}>Minutes</Text>
-                        <Picker
-                          selectedValue={entryMinutes}
-                          onValueChange={(value) => setEntryMinutes(value)}
-                          style={styles.picker}
-                          itemStyle={styles.pickerItem}
-                          themeVariant="light"
-                        >
-                          {Array.from({ length: 60 }).map((_, idx) => (
-                            <Picker.Item
-                              key={`entry-minutes-${idx}`}
-                              label={`${idx}`}
-                              value={idx}
-                              color={colors.text}
-                            />
-                          ))}
-                        </Picker>
+                        {Platform.OS === 'android' ? (
+                          <WheelPickerExpo
+                            height={150}
+                            width={110}
+                            items={minuteWheelItems}
+                            selectedIndex={entryMinutes}
+                            onChange={({ itemIndex }: { itemIndex: number }) => setEntryMinutes(itemIndex)}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Picker
+                            selectedValue={entryMinutes}
+                            onValueChange={(value) => setEntryMinutes(value)}
+                            style={styles.picker}
+                            itemStyle={styles.pickerItem}
+                            themeVariant="light"
+                          >
+                            {Array.from({ length: 60 }).map((_, idx) => (
+                              <Picker.Item
+                                key={`entry-minutes-${idx}`}
+                                label={`${idx}`}
+                                value={idx}
+                                color={colors.text}
+                              />
+                            ))}
+                          </Picker>
+                        )}
                       </View>
                     </View>
                     <TextInput
