@@ -467,13 +467,20 @@ const TasksScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.boardContent,
-          { paddingBottom: spacing.large + insets.bottom + spacing.large },
-        ]}
+        style={styles.verticalScroll}
+        contentContainerStyle={styles.verticalScrollContent}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
       >
+        <ScrollView
+          horizontal
+          nestedScrollEnabled
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.boardContent,
+            { paddingBottom: spacing.large + insets.bottom + spacing.large },
+          ]}
+        >
         {loading ? (
           <View style={styles.feedbackColumn}>
             <ActivityIndicator size="small" color={colors.white} />
@@ -673,6 +680,7 @@ const TasksScreen = () => {
             </TouchableOpacity>
           )}
         </View>
+        </ScrollView>
       </ScrollView>
       <Modal
         visible={!!cardDetails}
@@ -806,6 +814,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#0f5ef2',
+  },
+  verticalScroll: {
+    flex: 1,
+  },
+  verticalScrollContent: {
+    flexGrow: 1,
   },
   boardContent: {
     paddingHorizontal: spacing.large,
