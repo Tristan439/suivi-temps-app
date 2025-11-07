@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
+  AppStateStatus,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -14,12 +16,14 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRoute, RouteProp, useNavigation, useFocusEffect } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
 import { colors, fontSizes, spacing } from '../styles/global';
 import { loadSettings, updateSettings } from '../services/settings';
+import { PersistedTimerState, loadTimerState, saveTimerState } from '../services/timerPersistence';
 
 interface Stage {
   id: string;
@@ -32,6 +36,8 @@ type TimerRouteParams = {
   autoStart?: boolean;
   preselectedSubCategory?: SubCategoryKey;
 };
+
+const TIMER_REMINDER_DELAY_SECONDS = 60;
 
 const TimerScreen = () => {
   const insets = useSafeAreaInsets();
@@ -46,8 +52,19 @@ const TimerScreen = () => {
   const [selectedStage, setSelectedStage] = useState<string | undefined>();
   const [preferredStageId, setPreferredStageId] = useState<string | undefined>();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimestampRef = useRef<number | null>(null);
+  const elapsedBeforeStartRef = useRef(0);
+  const appState = useRef<AppStateStatus>(AppState.currentState);
+  const notificationIdRef = useRef<string | null>(null);
+  const notificationsEnabledRef = useRef(false);
+  const hydrationReadyRef = useRef(false);
+  const [hydrationReady, setHydrationReady] = useState(false);
+
   const route = useRoute<RouteProp<Record<string, TimerRouteParams | undefined>, string>>();
   const routeParams = route.params;
+  const navigation = useNavigation<any>();
+  const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
+
   const categoryOptions = useMemo<SelectOption[]>(
     () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
     [],
@@ -56,8 +73,109 @@ const TimerScreen = () => {
     () => SUB_CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
     [],
   );
-  const navigation = useNavigation<any>();
-  const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
+
+  const ensureIntervalCleared = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const computeElapsedSeconds = useCallback(() => {
+    const base = elapsedBeforeStartRef.current;
+    if (!startTimestampRef.current) {
+      return base;
+    }
+    const elapsedSinceStart = Math.max(0, Math.floor((Date.now() - startTimestampRef.current) / 1000));
+    return base + elapsedSinceStart;
+  }, []);
+
+  const syncDisplayedTime = useCallback(() => {
+    const total = computeElapsedSeconds();
+    setTime(total);
+    return total;
+  }, [computeElapsedSeconds]);
+
+  const persistTimerState = useCallback(
+    (overrides?: Partial<PersistedTimerState>, force = false) => {
+      if (!hydrationReadyRef.current && !force) {
+        return;
+      }
+
+      const hasOverride = <K extends keyof PersistedTimerState>(key: K) =>
+        overrides ? Object.prototype.hasOwnProperty.call(overrides, key) : false;
+
+      const nextIsRunning = hasOverride('isRunning')
+        ? overrides?.isRunning ?? false
+        : isRunning;
+      const nextStartTimestamp = hasOverride('startTimestamp')
+        ? overrides?.startTimestamp ?? null
+        : startTimestampRef.current ?? null;
+      const nextElapsed = hasOverride('elapsedSeconds')
+        ? overrides?.elapsedSeconds ?? 0
+        : elapsedBeforeStartRef.current;
+      const nextNotificationId = hasOverride('notificationId')
+        ? overrides?.notificationId ?? undefined
+        : notificationIdRef.current ?? undefined;
+
+      const payload: PersistedTimerState = {
+        isRunning: nextIsRunning,
+        startTimestamp: nextStartTimestamp,
+        elapsedSeconds: nextElapsed,
+        categorie: hasOverride('categorie') ? overrides?.categorie : categorie,
+        subCategorie: hasOverride('subCategorie') ? overrides?.subCategorie : subCategory,
+        description: hasOverride('description') ? overrides?.description : description,
+        selectedStage: hasOverride('selectedStage') ? overrides?.selectedStage : selectedStage,
+        notificationId: nextNotificationId,
+      };
+
+      saveTimerState(payload).catch((error) => {
+        console.error('Error saving timer state:', error);
+      });
+    },
+    [categorie, description, isRunning, selectedStage, subCategory],
+  );
+
+  const cancelScheduledNotification = useCallback(async () => {
+    if (!notificationIdRef.current) {
+      return;
+    }
+    try {
+      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+    } catch (error) {
+      console.error('Error cancelling timer notification:', error);
+    } finally {
+      notificationIdRef.current = null;
+    }
+  }, []);
+
+  const scheduleReminderNotification = useCallback(async (): Promise<string | null> => {
+    if (!notificationsEnabledRef.current || TIMER_REMINDER_DELAY_SECONDS <= 0) {
+      return null;
+    }
+    try {
+      await cancelScheduledNotification();
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Chronomètre en cours',
+          body: 'Touchez pour revenir et arrêter le chronomètre.',
+        },
+        trigger: { seconds: TIMER_REMINDER_DELAY_SECONDS },
+      });
+      notificationIdRef.current = id;
+      return id;
+    } catch (error) {
+      console.error('Error scheduling timer notification:', error);
+      return null;
+    }
+  }, [cancelScheduledNotification]);
+
+  const scheduleBackgroundReminder = useCallback(async () => {
+    const id = await scheduleReminderNotification();
+    if (id) {
+      persistTimerState({ notificationId: id }, true);
+    }
+  }, [persistTimerState, scheduleReminderNotification]);
 
   const persistDefaultStage = useCallback(async (stageId?: string) => {
     try {
@@ -111,11 +229,6 @@ const TimerScreen = () => {
       }
     };
     fetchStages();
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
   }, [routeParams?.preselectedStage, applyStageSelection]);
 
   useEffect(() => {
@@ -157,15 +270,181 @@ const TimerScreen = () => {
     }, []),
   );
 
+  useEffect(() => {
+    const ensureNotificationPermission = async () => {
+      try {
+        const existing = await Notifications.getPermissionsAsync();
+        let granted =
+          existing.granted ||
+          existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+        if (!granted) {
+          const request = await Notifications.requestPermissionsAsync();
+          granted =
+            request.granted ||
+            request.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+        }
+        notificationsEnabledRef.current = Boolean(granted);
+      } catch (error) {
+        console.error('Error requesting notification permissions:', error);
+      }
+    };
+    ensureNotificationPermission();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const hydrateTimerState = async () => {
+      try {
+        const stored = await loadTimerState();
+        if (!isMounted || !stored) {
+          return;
+        }
+        if (stored.categorie) {
+          setCategorie(stored.categorie);
+        }
+        if (stored.subCategorie) {
+          setSubCategory(stored.subCategorie);
+        }
+        if (typeof stored.description === 'string') {
+          setDescription(stored.description);
+        }
+        if (stored.selectedStage) {
+          setSelectedStage(stored.selectedStage);
+        }
+        notificationIdRef.current = stored.notificationId ?? null;
+        elapsedBeforeStartRef.current = stored.elapsedSeconds ?? 0;
+        setTime(stored.elapsedSeconds ?? 0);
+        if (stored.isRunning && typeof stored.startTimestamp === 'number') {
+          startTimestampRef.current = stored.startTimestamp;
+          setIsRunning(true);
+          intervalRef.current = setInterval(() => {
+            syncDisplayedTime();
+          }, 1000);
+          syncDisplayedTime();
+        } else {
+          setIsRunning(false);
+          startTimestampRef.current = stored.startTimestamp ?? null;
+        }
+      } catch (error) {
+        console.error('Error restoring timer state:', error);
+      } finally {
+        if (isMounted) {
+          hydrationReadyRef.current = true;
+          setHydrationReady(true);
+        }
+      }
+    };
+    hydrateTimerState();
+    return () => {
+      isMounted = false;
+    };
+  }, [syncDisplayedTime]);
+
+  useEffect(() => {
+    return () => {
+      ensureIntervalCleared();
+      void cancelScheduledNotification();
+    };
+  }, [ensureIntervalCleared, cancelScheduledNotification]);
+
   const startTimer = useCallback(() => {
     if (isRunning) {
       return;
     }
+    elapsedBeforeStartRef.current = time;
+    startTimestampRef.current = Date.now();
     setIsRunning(true);
     intervalRef.current = setInterval(() => {
-      setTime((prevTime) => prevTime + 1);
+      syncDisplayedTime();
     }, 1000);
-  }, [isRunning]);
+    syncDisplayedTime();
+    persistTimerState(
+      {
+        isRunning: true,
+        startTimestamp: startTimestampRef.current,
+        elapsedSeconds: elapsedBeforeStartRef.current,
+        notificationId: undefined,
+      },
+      true,
+    );
+  }, [isRunning, persistTimerState, syncDisplayedTime, time]);
+
+  const pauseTimer = useCallback(() => {
+    if (!isRunning) {
+      return;
+    }
+    const total = syncDisplayedTime();
+    elapsedBeforeStartRef.current = total;
+    startTimestampRef.current = null;
+    setIsRunning(false);
+    ensureIntervalCleared();
+    void cancelScheduledNotification().then(() => {
+      persistTimerState(
+        {
+          isRunning: false,
+          startTimestamp: null,
+          elapsedSeconds: elapsedBeforeStartRef.current,
+          notificationId: undefined,
+        },
+        true,
+      );
+    });
+  }, [cancelScheduledNotification, ensureIntervalCleared, isRunning, persistTimerState, syncDisplayedTime]);
+
+  const stopTimer = useCallback(async () => {
+    const totalElapsed = syncDisplayedTime();
+    elapsedBeforeStartRef.current = totalElapsed;
+    startTimestampRef.current = null;
+    ensureIntervalCleared();
+    setIsRunning(false);
+    await cancelScheduledNotification();
+    if (totalElapsed < 1) {
+      Alert.alert('Erreur', 'Le minuteur doit tourner pendant au moins une seconde.');
+      return;
+    }
+    if (!selectedStage) {
+      Alert.alert('Erreur', 'Veuillez sélectionner un stage.');
+      return;
+    }
+
+    try {
+      await addEntreeTemps({
+        dureeSecondes: totalElapsed,
+        categorie,
+        subCategorie: subCategory,
+        description,
+        date: new Date(),
+        stageId: selectedStage,
+        type: 'chrono',
+      });
+      Alert.alert('Succès', 'Votre temps a été enregistré.');
+      elapsedBeforeStartRef.current = 0;
+      setTime(0);
+      setDescription('');
+      persistTimerState(
+        {
+          isRunning: false,
+          startTimestamp: null,
+          elapsedSeconds: 0,
+          description: '',
+          notificationId: undefined,
+        },
+        true,
+      );
+    } catch (error) {
+      console.error('Error saving time entry:', error);
+      Alert.alert('Erreur', "Impossible d'enregistrer votre temps.");
+    }
+  }, [
+    cancelScheduledNotification,
+    categorie,
+    ensureIntervalCleared,
+    persistTimerState,
+    selectedStage,
+    subCategory,
+    syncDisplayedTime,
+    description,
+  ]);
 
   const handleStageChange = useCallback(
     (value: string) => {
@@ -173,8 +452,34 @@ const TimerScreen = () => {
       setSelectedStage(stageId);
       setPreferredStageId(stageId);
       persistDefaultStage(stageId);
+      persistTimerState({ selectedStage: stageId }, true);
     },
-    [persistDefaultStage],
+    [persistDefaultStage, persistTimerState],
+  );
+
+  const handleCategoryChange = useCallback(
+    (value: string) => {
+      setCategorie(value);
+      persistTimerState({ categorie: value }, true);
+    },
+    [persistTimerState],
+  );
+
+  const handleSubCategoryChange = useCallback(
+    (value: string) => {
+      const typed = value as SubCategoryKey;
+      setSubCategory(typed);
+      persistTimerState({ subCategorie: typed }, true);
+    },
+    [persistTimerState],
+  );
+
+  const handleDescriptionChange = useCallback(
+    (value: string) => {
+      setDescription(value);
+      persistTimerState({ description: value }, true);
+    },
+    [persistTimerState],
   );
 
   useEffect(() => {
@@ -187,50 +492,28 @@ const TimerScreen = () => {
     }
   }, [shouldAutoStart, selectedStage, startTimer, navigation, routeParams]);
 
-  const pauseTimer = () => {
-    if (!isRunning) {
-      return;
-    }
-    setIsRunning(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-  };
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasBackground = Boolean(appState.current && appState.current.match(/inactive|background/));
+      const goingBackground = Boolean(nextAppState.match(/inactive|background/));
+      if (appState.current === 'active' && goingBackground) {
+        if (isRunning) {
+          void scheduleBackgroundReminder();
+        }
+      }
+      if (wasBackground && nextAppState === 'active') {
+        void cancelScheduledNotification().then(() => {
+          persistTimerState({ notificationId: undefined }, true);
+        });
+        syncDisplayedTime();
+      }
+      appState.current = nextAppState;
+    });
 
-  const stopTimer = async () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    setIsRunning(false);
-
-    if (time < 1) {
-      Alert.alert('Erreur', 'Le minuteur doit tourner pendant au moins une seconde.');
-      return;
-    }
-    if (!selectedStage) {
-      Alert.alert('Erreur', 'Veuillez sélectionner un stage.');
-      return;
-    }
-
-    try {
-      await addEntreeTemps({
-        dureeSecondes: time,
-        categorie,
-        subCategorie: subCategory,
-        description,
-        date: new Date(),
-        stageId: selectedStage,
-        type: 'chrono',
-      });
-      Alert.alert('Succès', 'Votre temps a été enregistré.');
-    } catch (error) {
-      console.error('Error saving time entry:', error);
-      Alert.alert('Erreur', "Impossible d'enregistrer votre temps.");
-    }
-
-    setTime(0);
-    setDescription('');
-  };
+    return () => {
+      subscription.remove();
+    };
+  }, [cancelScheduledNotification, isRunning, persistTimerState, scheduleBackgroundReminder, syncDisplayedTime]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
@@ -254,8 +537,8 @@ const TimerScreen = () => {
             styles.scrollContent,
             { paddingBottom: insets.bottom + spacing.large * 3 },
           ]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps='handled'
+          keyboardDismissMode='on-drag'
           onScrollBeginDrag={() => Keyboard.dismiss()}
           showsVerticalScrollIndicator={false}
         >
@@ -273,24 +556,24 @@ const TimerScreen = () => {
             />
             <SelectInput
               value={categorie}
-              onValueChange={(value) => setCategorie(value)}
+              onValueChange={handleCategoryChange}
               options={categoryOptions}
               disabled={isRunning}
             />
             <SelectInput
               value={subCategory}
-              onValueChange={(value) => setSubCategory(value as SubCategoryKey)}
+              onValueChange={handleSubCategoryChange}
               options={subCategoryOptions}
               disabled={isRunning}
-              placeholder="Sous-catégorie"
+              placeholder='Sous-catégorie'
             />
             <TextInput
               style={styles.input}
-              placeholder="Description"
+              placeholder='Description'
               value={description}
-              onChangeText={setDescription}
+              onChangeText={handleDescriptionChange}
               editable={!isRunning}
-              returnKeyType="done"
+              returnKeyType='done'
               blurOnSubmit
               onSubmitEditing={Keyboard.dismiss}
             />
@@ -298,10 +581,7 @@ const TimerScreen = () => {
 
           <View style={styles.buttonsContainer}>
             <TouchableOpacity
-              style={[
-                styles.button,
-                isRunning ? styles.pauseButton : styles.startButton,
-              ]}
+              style={[styles.button, isRunning ? styles.pauseButton : styles.startButton]}
               onPress={isRunning ? pauseTimer : startTimer}
             >
               <Text style={styles.buttonText}>{isRunning ? 'Pause' : 'Start'}</Text>
