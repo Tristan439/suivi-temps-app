@@ -33,6 +33,8 @@ const DEFAULT_WORK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroWorkMinutes;
 const DEFAULT_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroBreakMinutes;
 const DEFAULT_LONG_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroLongBreakMinutes;
 const TOTAL_SESSIONS = 4;
+const POMODORO_STATUS_NOTIFICATION_ID = 'pomodoro-status';
+const POMODORO_FINISH_NOTIFICATION_ID = 'pomodoro-finish';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -88,8 +90,67 @@ const PomodoroScreen = () => {
   const phaseEndRef = useRef<number | null>(null);
   const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
   const appState = useRef<AppStateStatus>(AppState.currentState);
-  const notificationIdRef = useRef<string | null>(null);
   const notificationsEnabledRef = useRef(false);
+
+  const dismissStatusNotification = useCallback(async () => {
+    try {
+      await Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const cancelFinishNotification = useCallback(async () => {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(POMODORO_FINISH_NOTIFICATION_ID);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const cancelAllPomodoroNotifications = useCallback(async () => {
+    await dismissStatusNotification();
+    await cancelFinishNotification();
+  }, [cancelFinishNotification, dismissStatusNotification]);
+
+  const scheduleFinishNotification = useCallback(
+    async (durationSeconds: number, phaseType: 'work' | 'break' | 'long-break'): Promise<void> => {
+      if (!notificationsEnabledRef.current) {
+        return;
+      }
+      try {
+        await cancelFinishNotification();
+        const trigger: Notifications.TimeIntervalTriggerInput = {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: Math.max(1, durationSeconds),
+          repeats: false,
+        };
+        await Notifications.scheduleNotificationAsync({
+          identifier: POMODORO_FINISH_NOTIFICATION_ID,
+          content: {
+            title:
+              phaseType === 'work'
+                ? 'Session de travail terminée'
+                : phaseType === 'long-break'
+                  ? 'Longue pause terminée'
+                  : 'Pause terminée',
+            body:
+              phaseType === 'work'
+                ? 'Temps de faire une pause.'
+                : 'Revenez à votre session de travail.',
+            data: {
+              notificationType: 'pomodoro',
+              phaseType,
+            },
+          },
+          trigger,
+        });
+      } catch (error) {
+        console.error('Error scheduling pomodoro notification:', error);
+      }
+    },
+    [cancelFinishNotification],
+  );
 
   const categoryOptions = useMemo<SelectOption[]>(
     () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
@@ -101,27 +162,49 @@ const PomodoroScreen = () => {
   );
 
   const scheduleNotificationForRemainingTime = useCallback(async () => {
+    if (!notificationsEnabledRef.current) {
+      return;
+    }
     if (!phaseEndRef.current) {
       return;
     }
-    const remainingSeconds = Math.ceil((phaseEndRef.current - Date.now()) / 1000);
+    const remainingSeconds = Math.max(0, Math.floor((phaseEndRef.current - Date.now()) / 1000));
     if (remainingSeconds <= 0) {
       return;
     }
-    const phaseType = isWorkSession ? 'work' : isLongBreak ? 'long-break' : 'break';
-    const notificationId = await schedulePhaseNotification(remainingSeconds, phaseType);
-    persistActivePhase(phaseEndRef.current, {
-      isWorkSession,
-      isLongBreak,
-      completedSessions,
-    }, notificationId);
-  }, [
-    completedSessions,
-    isLongBreak,
-    isWorkSession,
-    persistActivePhase,
-    schedulePhaseNotification,
-  ]);
+    const phaseType: 'work' | 'break' | 'long-break' = isWorkSession
+      ? 'work'
+      : isLongBreak
+        ? 'long-break'
+        : 'break';
+
+    const endTime = new Date(Date.now() + remainingSeconds * 1000);
+    const formattedEndTime = `${String(endTime.getHours()).padStart(2, '0')}:${String(
+      endTime.getMinutes(),
+    ).padStart(2, '0')}`;
+    const statusBody =
+      phaseType === 'work'
+        ? `Session de travail en cours. Fin prévue à ${formattedEndTime}.`
+        : phaseType === 'long-break'
+          ? `Longue pause en cours. Fin prévue à ${formattedEndTime}.`
+          : `Pause en cours. Fin prévue à ${formattedEndTime}.`;
+
+    try {
+      await dismissStatusNotification();
+      await Notifications.scheduleNotificationAsync({
+        identifier: POMODORO_STATUS_NOTIFICATION_ID,
+        content: {
+          title: 'Session en cours',
+          body: statusBody,
+          data: { notificationType: 'pomodoro-status', phaseType },
+          sound: false,
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Error showing pomodoro status notification:', error);
+    }
+  }, [dismissStatusNotification, isLongBreak, isWorkSession]);
 
   const route = useRoute<RouteProp<Record<string, PomodoroRouteParams | undefined>, string>>();
   const navigation = useNavigation<any>();
@@ -306,12 +389,13 @@ const PomodoroScreen = () => {
             request.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
         }
         notificationsEnabledRef.current = Boolean(granted);
+        await cancelAllPomodoroNotifications();
       } catch (error) {
         console.error('Error requesting notification permissions:', error);
       }
     };
     ensureNotificationPermission();
-  }, []);
+  }, [cancelAllPomodoroNotifications]);
 
   useEffect(() => {
     let isMounted = true;
@@ -345,10 +429,17 @@ const PomodoroScreen = () => {
         if (persisted.linkedTaskCardId !== undefined) {
           setLinkedTaskCardId(persisted.linkedTaskCardId);
         }
-        notificationIdRef.current = persisted.notificationId ?? null;
         setHasElapsedCurrentSession(true);
         setIsActive(true);
         const remainingSeconds = Math.ceil(remainingMs / 1000);
+        if (remainingSeconds > 0) {
+          const restoredPhaseType: 'work' | 'break' | 'long-break' = persisted.isWorkSession
+            ? 'work'
+            : persisted.isLongBreak
+              ? 'long-break'
+              : 'break';
+          await scheduleFinishNotification(remainingSeconds, restoredPhaseType);
+        }
       } catch (error) {
         console.error('Error restoring pomodoro session:', error);
       }
@@ -357,27 +448,10 @@ const PomodoroScreen = () => {
     return () => {
       isMounted = false;
     };
-  }, [schedulePhaseNotification]);
-
-  const cancelScheduledNotification = useCallback(async () => {
-    if (!notificationIdRef.current) {
-      return;
-    }
-    try {
-      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
-    } catch (error) {
-      console.error('Error cancelling pomodoro notification:', error);
-    } finally {
-      notificationIdRef.current = null;
-    }
-  }, []);
+  }, [clearPomodoroState, scheduleFinishNotification]);
 
   const persistActivePhase = useCallback(
-    (
-      phaseEndTimestamp: number,
-      config: { isWorkSession: boolean; isLongBreak: boolean; completedSessions: number },
-      notificationId?: string | null,
-    ) => {
+    (phaseEndTimestamp: number, config: { isWorkSession: boolean; isLongBreak: boolean; completedSessions: number }) => {
       const payload: PersistedPomodoroState = {
         phaseEndTimestamp,
         isWorkSession: config.isWorkSession,
@@ -388,7 +462,6 @@ const PomodoroScreen = () => {
         description,
         selectedStage,
         linkedTaskCardId,
-        notificationId: notificationId ?? undefined,
       };
       savePomodoroState(payload).catch((error) => {
         console.error('Error saving pomodoro phase:', error);
@@ -403,44 +476,13 @@ const PomodoroScreen = () => {
     });
   }, []);
 
-  const schedulePhaseNotification = useCallback(
-    async (durationSeconds: number, phaseType: 'work' | 'break' | 'long-break'): Promise<string | null> => {
-      if (!notificationsEnabledRef.current) {
-        return null;
-      }
-      try {
-        await cancelScheduledNotification();
-        const id = await Notifications.scheduleNotificationAsync({
-          content: {
-            title:
-              phaseType === 'work'
-                ? 'Session terminée'
-                : phaseType === 'long-break'
-                  ? 'Longue pause terminée'
-                  : 'Pause terminée',
-            body:
-              phaseType === 'work'
-                ? 'Temps de faire une pause.'
-                : 'Revenez à votre session de travail.',
-          },
-          trigger: { seconds: Math.max(1, durationSeconds) },
-        });
-        notificationIdRef.current = id;
-        return id;
-      } catch (error) {
-        console.error('Error scheduling pomodoro notification:', error);
-        return null;
-      }
-    },
-    [cancelScheduledNotification],
-  );
-
   const schedulePhaseEnd = useCallback(
     (
       durationSeconds: number,
       overrides?: { isWorkSession?: boolean; isLongBreak?: boolean; completedSessions?: number },
     ) => {
-      void cancelScheduledNotification();
+      void cancelFinishNotification();
+      void dismissStatusNotification();
       const nextIsWorkSession = overrides?.isWorkSession ?? isWorkSession;
       const nextIsLongBreak = overrides?.isLongBreak ?? isLongBreak;
       const nextCompletedSessions = overrides?.completedSessions ?? completedSessions;
@@ -451,18 +493,33 @@ const PomodoroScreen = () => {
         isLongBreak: nextIsLongBreak,
         completedSessions: nextCompletedSessions,
       });
+      const nextPhaseType: 'work' | 'break' | 'long-break' = nextIsWorkSession
+        ? 'work'
+        : nextIsLongBreak
+          ? 'long-break'
+          : 'break';
+      void scheduleFinishNotification(durationSeconds, nextPhaseType);
     },
-    [cancelScheduledNotification, completedSessions, isLongBreak, isWorkSession, persistActivePhase],
+    [
+      cancelFinishNotification,
+      completedSessions,
+      isLongBreak,
+      isWorkSession,
+      scheduleFinishNotification,
+      dismissStatusNotification,
+      persistActivePhase,
+    ],
   );
 
   const clearPhaseEnd = useCallback(() => {
     phaseEndRef.current = null;
-    void cancelScheduledNotification();
+    void cancelAllPomodoroNotifications();
     void clearPersistedPhase();
-  }, [cancelScheduledNotification, clearPersistedPhase]);
+  }, [cancelAllPomodoroNotifications, clearPersistedPhase]);
 
   const transitionToNextPhase = useCallback(() => {
     const wasWorkSession = isWorkSession;
+    Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID).catch(() => {});
 
     if (wasWorkSession && selectedStage) {
       const entryData = {
@@ -588,7 +645,7 @@ const PomodoroScreen = () => {
         }
       }
       if (wasBackground && nextAppState === 'active') {
-        void cancelScheduledNotification();
+        Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID).catch(() => {});
         syncRemainingTime();
       }
       appState.current = nextAppState;
@@ -597,7 +654,7 @@ const PomodoroScreen = () => {
     return () => {
       subscription.remove();
     };
-  }, [cancelScheduledNotification, isActive, scheduleNotificationForRemainingTime, syncRemainingTime]);
+  }, [isActive, scheduleNotificationForRemainingTime, syncRemainingTime]);
 
   const startSession = useCallback(() => {
     if (isActive) {
@@ -713,6 +770,12 @@ const PomodoroScreen = () => {
   const handleStopEarly = async () => {
     if (!selectedStage) {
       Alert.alert('Stage requis', 'Veuillez sélectionner un stage.');
+      return;
+    }
+
+    if (!isWorkSession) {
+      // Stopping during a break should not produce a time entry.
+      resetTimer();
       return;
     }
 

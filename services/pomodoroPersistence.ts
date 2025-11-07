@@ -14,7 +14,6 @@ export interface PersistedPomodoroState {
   description?: string;
   selectedStage?: string;
   linkedTaskCardId?: string;
-  notificationId?: string;
 }
 
 export const savePomodoroState = async (state: PersistedPomodoroState) => {
