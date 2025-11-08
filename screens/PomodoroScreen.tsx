@@ -517,6 +517,34 @@ const PomodoroScreen = () => {
     void clearPersistedPhase();
   }, [cancelAllPomodoroNotifications, clearPersistedPhase]);
 
+  const skipBreak = useCallback(() => {
+    if (isWorkSession) {
+      return;
+    }
+    const nextPhaseEnd = Date.now() + workDuration * 60 * 1000;
+    phaseEndRef.current = nextPhaseEnd;
+    setIsWorkSession(true);
+    setIsLongBreak(false);
+    setMinutes(workDuration);
+    setSeconds(0);
+    setHasElapsedCurrentSession(false);
+    persistActivePhase(nextPhaseEnd, {
+      isWorkSession: true,
+      isLongBreak: false,
+      completedSessions,
+    });
+    dismissStatusNotification();
+    scheduleFinishNotification(workDuration * 60, 'work');
+    setIsActive(true);
+  }, [
+    completedSessions,
+    dismissStatusNotification,
+    isWorkSession,
+    persistActivePhase,
+    scheduleFinishNotification,
+    workDuration,
+  ]);
+
   const transitionToNextPhase = useCallback(() => {
     const wasWorkSession = isWorkSession;
     Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID).catch(() => {});
@@ -939,6 +967,12 @@ const PomodoroScreen = () => {
               <Ionicons name="refresh" size={18} color={colors.white} />
               <Text style={styles.heroButtonText}>Reset</Text>
             </TouchableOpacity>
+            {!isWorkSession && (
+              <TouchableOpacity style={[styles.heroButton, styles.heroSkipButton]} onPress={skipBreak}>
+                <Ionicons name="play-skip-forward" size={18} color={colors.white} />
+                <Text style={styles.heroButtonText}>Skip</Text>
+              </TouchableOpacity>
+            )}
             {canLogPausedWork && (
               <TouchableOpacity
                 style={[styles.heroButton, styles.heroSaveButton]}
@@ -1168,6 +1202,9 @@ const styles = StyleSheet.create({
   },
   heroResetButton: {
     backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  heroSkipButton: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   heroSaveButton: {
     backgroundColor: colors.accent,

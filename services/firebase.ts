@@ -109,7 +109,9 @@ export const getEntreesParMois = async (year: number, month: number, stageId?: s
   }
 
   const startDate = new Date(year, month - 1, 1);
+  startDate.setHours(0, 0, 0, 0);
   const endDate = new Date(year, month, 0);
+  endDate.setHours(23, 59, 59, 999);
 
   try {
     let q = query(
@@ -349,7 +351,9 @@ export const getCumulsParCategorie = async (year: number, month: number, stageId
     }
 
     const startDate = new Date(year, month - 1, 1);
+    startDate.setHours(0, 0, 0, 0);
     const endDate = new Date(year, month, 0);
+    endDate.setHours(23, 59, 59, 999);
 
     try {
         let q = query(
