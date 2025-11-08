@@ -253,25 +253,19 @@ const TasksScreen = () => {
   };
 
   const confirmDeleteList = (listId: string) => {
-    Alert.alert('Supprimer cette liste ?', 'Toutes les cartes de cette liste seront aussi supprimées.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteTaskList(listId);
-            if (editingListId === listId) {
-              setEditingListId(null);
-            }
-            await fetchLists();
-          } catch (error) {
-            console.error('Error deleting list:', error);
-            Alert.alert('Erreur', 'Impossible de supprimer la liste.');
-          }
-        },
-      },
-    ]);
+    const performDelete = async () => {
+      try {
+        await deleteTaskList(listId);
+        if (editingListId === listId) {
+          setEditingListId(null);
+        }
+        await fetchLists();
+      } catch (error) {
+        console.error('Error deleting list:', error);
+        Alert.alert('Erreur', 'Impossible de supprimer la liste.');
+      }
+    };
+    performDelete();
   };
 
   const startEditCard = (listId: string, card: TaskCard) => {
@@ -303,26 +297,20 @@ const TasksScreen = () => {
   };
 
   const confirmDeleteCard = (listId: string, cardId: string) => {
-    Alert.alert('Supprimer cette carte ?', '', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteTaskCard(listId, cardId);
-            if (editingCard && editingCard.cardId === cardId) {
-              setEditingCard(null);
-              setEditingCardTitle('');
-            }
-            await fetchLists();
-          } catch (error) {
-            console.error('Error deleting card:', error);
-            Alert.alert('Erreur', 'Impossible de supprimer la carte.');
-          }
-        },
-      },
-    ]);
+    const performDelete = async () => {
+      try {
+        await deleteTaskCard(listId, cardId);
+        if (editingCard && editingCard.cardId === cardId) {
+          setEditingCard(null);
+          setEditingCardTitle('');
+        }
+        await fetchLists();
+      } catch (error) {
+        console.error('Error deleting card:', error);
+        Alert.alert('Erreur', 'Impossible de supprimer la carte.');
+      }
+    };
+    performDelete();
   };
 
   const loadCardEntries = useCallback(
@@ -592,6 +580,17 @@ const TasksScreen = () => {
                           />
                         </View>
                         <View style={styles.cardQuickActions}>
+                          <TouchableOpacity
+                            style={styles.cardDeleteButton}
+                            onPress={(event: GestureResponderEvent) => {
+                              event.stopPropagation();
+                              confirmDeleteCard(list.id, card.id);
+                            }}
+                            hitSlop={8}
+                            activeOpacity={0.85}
+                          >
+                            <Ionicons name="trash" size={16} color={colors.white} />
+                          </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.cardPomodoroButton}
                             onPress={(event: GestureResponderEvent) => {
@@ -915,6 +914,7 @@ const styles = StyleSheet.create({
   cardQuickActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: spacing.small,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -932,6 +932,16 @@ const styles = StyleSheet.create({
   },
   cardPomodoroButton: {
     backgroundColor: colors.primary,
+    padding: spacing.small,
+    borderRadius: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardDeleteButton: {
+    backgroundColor: '#dc3545',
     padding: spacing.small,
     borderRadius: 999,
     shadowColor: '#000',

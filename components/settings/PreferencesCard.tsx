@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import SelectInput, { SelectOption } from '../SelectInput';
-import { colors, fontSizes, spacing } from '../../styles/global';
+import { colors, fontSizes, spacing, layout } from '../../styles/global';
 
 interface PreferencesCardProps {
   defaultStageId?: string;
@@ -39,6 +39,9 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
     gap: spacing.medium,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   cardTitle: {
     fontSize: fontSizes.subtitle,

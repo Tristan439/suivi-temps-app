@@ -20,3 +20,7 @@ export const spacing = {
   medium: 16,
   large: 24,
 };
+
+export const layout = {
+  contentMaxWidth: 960,
+};

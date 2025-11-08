@@ -4,6 +4,7 @@ import {
   AppState,
   AppStateStatus,
   Keyboard,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,7 +20,7 @@ import * as Notifications from 'expo-notifications';
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
-import { colors, fontSizes, spacing } from '../styles/global';
+import { colors, fontSizes, spacing, layout } from '../styles/global';
 import { AppSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from '../services/settings';
 import {
   clearPomodoroState,
@@ -86,27 +87,57 @@ const PomodoroScreen = () => {
   const [completedSessions, setCompletedSessions] = useState(0);
   const [autoStartBreaks, setAutoStartBreaks] = useState(DEFAULT_SETTINGS.autoStartPomodoroBreaks);
   const [preferredStageId, setPreferredStageId] = useState<string | undefined>(DEFAULT_SETTINGS.defaultStageId);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const phaseEndRef = useRef<number | null>(null);
   const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const notificationsEnabledRef = useRef(false);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const supportsNotifications = Platform.OS !== 'web';
+
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastVisible(false);
+    }, 2500);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   const dismissStatusNotification = useCallback(async () => {
+    if (!supportsNotifications) {
+      return;
+    }
     try {
       await Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID);
     } catch {
       // noop
     }
-  }, []);
+  }, [supportsNotifications]);
 
   const cancelFinishNotification = useCallback(async () => {
+    if (!supportsNotifications) {
+      return;
+    }
     try {
       await Notifications.cancelScheduledNotificationAsync(POMODORO_FINISH_NOTIFICATION_ID);
     } catch {
       // noop
     }
-  }, []);
+  }, [supportsNotifications]);
 
   const cancelAllPomodoroNotifications = useCallback(async () => {
     await dismissStatusNotification();
@@ -115,7 +146,7 @@ const PomodoroScreen = () => {
 
   const scheduleFinishNotification = useCallback(
     async (durationSeconds: number, phaseType: 'work' | 'break' | 'long-break'): Promise<void> => {
-      if (!notificationsEnabledRef.current) {
+      if (!supportsNotifications || !notificationsEnabledRef.current) {
         return;
       }
       try {
@@ -149,7 +180,7 @@ const PomodoroScreen = () => {
         console.error('Error scheduling pomodoro notification:', error);
       }
     },
-    [cancelFinishNotification],
+    [cancelFinishNotification, supportsNotifications],
   );
 
   const categoryOptions = useMemo<SelectOption[]>(
@@ -162,7 +193,7 @@ const PomodoroScreen = () => {
   );
 
   const scheduleNotificationForRemainingTime = useCallback(async () => {
-    if (!notificationsEnabledRef.current) {
+    if (!supportsNotifications || !notificationsEnabledRef.current) {
       return;
     }
     if (!phaseEndRef.current) {
@@ -204,7 +235,7 @@ const PomodoroScreen = () => {
     } catch (error) {
       console.error('Error showing pomodoro status notification:', error);
     }
-  }, [dismissStatusNotification, isLongBreak, isWorkSession]);
+  }, [dismissStatusNotification, isLongBreak, isWorkSession, supportsNotifications]);
 
   const route = useRoute<RouteProp<Record<string, PomodoroRouteParams | undefined>, string>>();
   const navigation = useNavigation<any>();
@@ -376,6 +407,9 @@ const PomodoroScreen = () => {
   ]);
 
   useEffect(() => {
+    if (!supportsNotifications) {
+      return;
+    }
     const ensureNotificationPermission = async () => {
       try {
         const existing = await Notifications.getPermissionsAsync();
@@ -395,7 +429,7 @@ const PomodoroScreen = () => {
       }
     };
     ensureNotificationPermission();
-  }, [cancelAllPomodoroNotifications]);
+  }, [cancelAllPomodoroNotifications, supportsNotifications]);
 
   useEffect(() => {
     let isMounted = true;
@@ -562,7 +596,7 @@ const PomodoroScreen = () => {
       };
       addEntreeTemps(entryData)
         .then(() => {
-          Alert.alert('Session terminée', 'Votre session de travail a été enregistrée.');
+          showToast('Session Pomodoro enregistrée');
         })
         .catch((error) => {
           console.error('Error saving pomodoro session:', error);
@@ -613,6 +647,7 @@ const PomodoroScreen = () => {
     subCategory,
     workDuration,
     categorie,
+    showToast,
   ]);
 
   const syncRemainingTime = useCallback(() => {
@@ -667,13 +702,13 @@ const PomodoroScreen = () => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       const wasBackground = Boolean(appState.current && appState.current.match(/inactive|background/));
       const goingBackground = nextAppState.match(/inactive|background/);
-      if (appState.current === 'active' && goingBackground) {
+      if (supportsNotifications && appState.current === 'active' && goingBackground) {
         if (isActive) {
           void scheduleNotificationForRemainingTime();
         }
       }
-      if (wasBackground && nextAppState === 'active') {
-        Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID).catch(() => {});
+      if (supportsNotifications && wasBackground && nextAppState === 'active') {
+        void dismissStatusNotification();
         syncRemainingTime();
       }
       appState.current = nextAppState;
@@ -682,7 +717,7 @@ const PomodoroScreen = () => {
     return () => {
       subscription.remove();
     };
-  }, [isActive, scheduleNotificationForRemainingTime, syncRemainingTime]);
+  }, [dismissStatusNotification, isActive, scheduleNotificationForRemainingTime, supportsNotifications, syncRemainingTime]);
 
   const startSession = useCallback(() => {
     if (isActive) {
@@ -835,7 +870,7 @@ const PomodoroScreen = () => {
           ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
         };
         await addEntreeTemps(entryData);
-        Alert.alert('Temps enregistré', 'La durée écoulée a été ajoutée.');
+        showToast('Durée écoulée enregistrée');
       } catch (error) {
         console.error('Error saving pomodoro entry:', error);
         Alert.alert('Erreur', "Impossible d'enregistrer le temps.");
@@ -866,7 +901,7 @@ const PomodoroScreen = () => {
         ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
       };
       await addEntreeTemps(entryData);
-      Alert.alert('Session enregistrée', 'La durée écoulée a été ajoutée à votre suivi.');
+      showToast('Session enregistrée');
       resetTimer();
     } catch (error) {
       console.error('Error saving paused pomodoro session:', error);
@@ -1091,6 +1126,14 @@ const PomodoroScreen = () => {
           </View>
         </View>
       </ScrollView>
+      {toastVisible && (
+        <View
+          pointerEvents="none"
+          style={[styles.toast, { bottom: insets.bottom + spacing.large }]}
+        >
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -1104,6 +1147,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     gap: spacing.large,
+    alignItems: 'center',
+    width: '100%',
   },
   heroCard: {
     borderRadius: 24,
@@ -1115,6 +1160,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
     gap: spacing.large,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   heroWork: {
     backgroundColor: '#f85a7a',
@@ -1239,6 +1287,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 4,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   cardTitle: {
     fontSize: fontSizes.subtitle,
@@ -1294,6 +1345,25 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.subtitle,
     fontWeight: '600',
     color: colors.text,
+  },
+  toast: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingHorizontal: spacing.large,
+    paddingVertical: spacing.small,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    zIndex: 1000,
+    elevation: 10,
+  },
+  toastText: {
+    color: colors.white,
+    fontSize: fontSizes.body,
+    fontWeight: '600',
   },
 });
 

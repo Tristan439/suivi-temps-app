@@ -7,7 +7,7 @@ import { signOut } from 'firebase/auth';
 import PreferencesCard from '../components/settings/PreferencesCard';
 import StagesCard from '../components/settings/StagesCard';
 import useSettings from '../hooks/useSettings';
-import { colors, fontSizes, spacing } from '../styles/global';
+import { colors, fontSizes, spacing, layout } from '../styles/global';
 import { auth } from '../services/firebase';
 
 const SettingsScreen = () => {
@@ -45,18 +45,7 @@ const SettingsScreen = () => {
 
   const confirmDeleteStage = useCallback(
     (stageId: string, stageName: string) => {
-      Alert.alert(
-        'Supprimer ce stage ?',
-        `Voulez-vous supprimer le stage "${stageName}" ?`,
-        [
-          { text: 'Annuler', style: 'cancel' },
-          {
-            text: 'Supprimer',
-            style: 'destructive',
-            onPress: () => handleDeleteStage(stageId),
-          },
-        ],
-      );
+      void handleDeleteStage(stageId);
     },
     [handleDeleteStage],
   );
@@ -167,12 +156,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     gap: spacing.large,
+    alignItems: 'center',
+    width: '100%',
   },
   primaryButton: {
     backgroundColor: colors.primary,
     borderRadius: 14,
     paddingVertical: spacing.medium,
     alignItems: 'center',
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   primaryButtonText: {
     color: colors.white,
@@ -185,6 +179,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: spacing.medium,
     alignItems: 'center',
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   secondaryButtonText: {
     color: colors.primary,
@@ -200,6 +197,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: spacing.medium,
     alignItems: 'center',
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   logoutButtonText: {
     color: colors.white,

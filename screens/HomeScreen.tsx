@@ -46,8 +46,9 @@ import {
   SUB_CATEGORY_OPTIONS,
   SUB_CATEGORY_KEYS,
   SubCategoryKey,
+  getAdditionalKeysForSection,
 } from '../constants/categories';
-import { colors, fontSizes, spacing } from '../styles/global';
+import { colors, fontSizes, spacing, layout } from '../styles/global';
 import { loadSettings } from '../services/settings';
 
 interface Stage {
@@ -66,6 +67,22 @@ interface Entree {
   taskCardId?: string;
   subCategorie?: SubCategoryKey;
 }
+
+type DatePart = 'day' | 'month' | 'year';
+
+const buildYearOptions = (centerYear: number, span = 10) =>
+  Array.from({ length: span * 2 + 1 }, (_, idx) => centerYear - span + idx);
+
+const updateDateByPart = (current: Date, part: DatePart, value: number) => {
+  const targetYear = part === 'year' ? value : current.getFullYear();
+  const targetMonth = part === 'month' ? value : current.getMonth();
+  const targetDay = part === 'day' ? value : current.getDate();
+  const maxDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const adjustedDay = Math.min(targetDay, maxDay);
+  const nextDate = new Date(current);
+  nextDate.setFullYear(targetYear, targetMonth, adjustedDay);
+  return nextDate;
+};
 
 const ensureSelectOptions = (options: SelectOption[], value?: string) => {
   if (value && !options.some((option) => option.value === value)) {
@@ -111,6 +128,7 @@ const HomeScreen = () => {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
 
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -154,6 +172,8 @@ const HomeScreen = () => {
     client: true,
     autres: true,
   });
+  const pickerThemeVariant = Platform.OS === 'web' ? undefined : 'light';
+  const datePickerThemeVariant = Platform.OS === 'ios' ? 'light' : undefined;
 
   const categoryOptions = useMemo<SelectOption[]>(
     () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
@@ -185,6 +205,16 @@ const HomeScreen = () => {
     [subCategoryOptions, entrySubCategory],
   );
 
+  const manualYearOptions = useMemo(
+    () => buildYearOptions(manualDate.getFullYear()),
+    [manualDate],
+  );
+
+  const entryYearOptions = useMemo(
+    () => buildYearOptions(entryDate.getFullYear()),
+    [entryDate],
+  );
+
   const monthOptions = useMemo(
     () =>
       Array.from({ length: 12 }, (_, idx) => {
@@ -198,6 +228,8 @@ const HomeScreen = () => {
     const startYear = selectedYear - 10;
     return Array.from({ length: 21 }, (_, idx) => startYear + idx);
   }, [selectedYear]);
+
+  const dayOptions = useMemo(() => Array.from({ length: 31 }, (_, idx) => idx + 1), []);
 
   const hourWheelItems = useMemo(
     () =>
@@ -360,18 +392,27 @@ const HomeScreen = () => {
   const sectionRowSummaries = useMemo(() => {
     const summaries: Record<string, CategoryRowSummary[]> = {};
     CATEGORY_SECTIONS.forEach((section) => {
-      summaries[section.id] = section.rows.map((row) => {
-        const categorySubTotals =
-          subCategoryTotals[row.key] ?? ({
-            intervention: 0,
-            evaluation: 0,
-          } as Record<SubCategoryKey, number>);
+      const additionalKeys = getAdditionalKeysForSection(section.id);
+      summaries[section.id] = section.rows.map((row, index) => {
+        const includeExtras = index === 0 && additionalKeys.length > 0;
+        const relevantKeys = includeExtras ? [row.key, ...additionalKeys] : [row.key];
+        const aggregatedSubTotals = relevantKeys.reduce<Record<SubCategoryKey, number>>(
+          (acc, key) => {
+            const totals = subCategoryTotals[key];
+            if (totals) {
+              acc.intervention += totals.intervention ?? 0;
+              acc.evaluation += totals.evaluation ?? 0;
+            }
+            return acc;
+          },
+          { intervention: 0, evaluation: 0 },
+        );
         return {
           key: row.key,
           label: row.label,
-          totalSeconds: cumuls[row.key] || 0,
-          interventionSeconds: categorySubTotals.intervention ?? 0,
-          evaluationSeconds: categorySubTotals.evaluation ?? 0,
+          totalSeconds: relevantKeys.reduce((sum, key) => sum + (cumuls[key] || 0), 0),
+          interventionSeconds: aggregatedSubTotals.intervention,
+          evaluationSeconds: aggregatedSubTotals.evaluation,
         } satisfies CategoryRowSummary;
       });
     });
@@ -403,9 +444,9 @@ const HomeScreen = () => {
       setManualDatePickerVisible(false);
     }
     if (selectedDate) {
-    setManualDate(selectedDate);
-  }
-};
+      setManualDate(selectedDate);
+    }
+  };
 
   const handleEntryDateChange = (_event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
@@ -416,6 +457,24 @@ const HomeScreen = () => {
       setEntryDateInfo(formatDateDisplay(selectedDate));
     }
   };
+
+  const handleManualWebDatePartChange = useCallback(
+    (part: DatePart, value: number) => {
+      setManualDate((current) => updateDateByPart(current, part, value));
+    },
+    [],
+  );
+
+  const handleEntryWebDatePartChange = useCallback(
+    (part: DatePart, value: number) => {
+      setEntryDate((current) => {
+        const nextDate = updateDateByPart(current, part, value);
+        setEntryDateInfo(formatDateDisplay(nextDate));
+        return nextDate;
+      });
+    },
+    [],
+  );
 
   const toggleMonthPicker = () => {
     setMonthPickerVisible((prevVisible) => {
@@ -580,23 +639,18 @@ const HomeScreen = () => {
       return;
     }
 
-    Alert.alert('Supprimer cette entrée ?', 'Cette action est irréversible.', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteEntreeTemps(selectedEntry.id);
-            closeEntryModal();
-            fetchData();
-          } catch (error) {
-            console.error('Error deleting entry:', error);
-            Alert.alert('Erreur', "Impossible de supprimer l'entrée.");
-          }
-        },
-      },
-    ]);
+    const performDelete = async () => {
+      try {
+        await deleteEntreeTemps(selectedEntry.id);
+        closeEntryModal();
+        fetchData();
+      } catch (error) {
+        console.error('Error deleting entry:', error);
+        Alert.alert('Erreur', "Impossible de supprimer l'entrée.");
+      }
+    };
+
+    void performDelete();
   };
 
   return (
@@ -652,43 +706,47 @@ const HomeScreen = () => {
                   {monthPickerVisible && (
                     <View style={styles.monthPickerWrapper}>
                       <View style={styles.monthPickerRow}>
-                        <View style={styles.pickerColumn}>
+                        <View style={[styles.pickerColumn, styles.monthPickerColumn]}>
                           <Text style={styles.pickerLabel}>Mois</Text>
-                          <Picker
-                            selectedValue={selectedMonthIndex}
-                            onValueChange={(value) => setSelectedMonthIndex(Number(value))}
-                            style={styles.picker}
-                            itemStyle={styles.pickerItem}
-                            themeVariant="light"
-                          >
-                            {monthOptions.map((option) => (
-                              <Picker.Item
-                                key={`month-${option.value}`}
-                                label={option.label}
-                                value={option.value}
-                                color={colors.text}
-                              />
-                            ))}
-                          </Picker>
+                          <View style={[styles.pickerSelectWrapper, isWeb && styles.webPickerSelectWrapper]}>
+                            <Picker
+                              selectedValue={selectedMonthIndex}
+                              onValueChange={(value) => setSelectedMonthIndex(Number(value))}
+                              style={[styles.picker, isWeb && styles.webPicker]}
+                              itemStyle={[styles.pickerItem, isWeb && styles.webPickerItem]}
+                              themeVariant={pickerThemeVariant}
+                            >
+                              {monthOptions.map((option) => (
+                                <Picker.Item
+                                  key={`month-${option.value}`}
+                                  label={option.label}
+                                  value={option.value}
+                                  color={colors.text}
+                                />
+                              ))}
+                            </Picker>
+                          </View>
                         </View>
-                        <View style={styles.pickerColumn}>
+                        <View style={[styles.pickerColumn, styles.monthPickerColumn]}>
                           <Text style={styles.pickerLabel}>Année</Text>
-                          <Picker
-                            selectedValue={selectedYear}
-                            onValueChange={(value) => setSelectedYear(Number(value))}
-                            style={styles.picker}
-                            itemStyle={styles.pickerItem}
-                            themeVariant="light"
-                          >
-                            {yearOptions.map((year) => (
-                              <Picker.Item
-                                key={`year-${year}`}
-                                label={`${year}`}
-                                value={year}
-                                color={colors.text}
-                              />
-                            ))}
-                          </Picker>
+                          <View style={[styles.pickerSelectWrapper, isWeb && styles.webPickerSelectWrapper]}>
+                            <Picker
+                              selectedValue={selectedYear}
+                              onValueChange={(value) => setSelectedYear(Number(value))}
+                              style={[styles.picker, isWeb && styles.webPicker]}
+                              itemStyle={[styles.pickerItem, isWeb && styles.webPickerItem]}
+                              themeVariant={pickerThemeVariant}
+                            >
+                              {yearOptions.map((year) => (
+                                <Picker.Item
+                                  key={`year-${year}`}
+                                  label={`${year}`}
+                                  value={year}
+                                  color={colors.text}
+                                />
+                              ))}
+                            </Picker>
+                          </View>
                         </View>
                       </View>
                       <View style={styles.monthPickerActions}>
@@ -837,22 +895,91 @@ const HomeScreen = () => {
                       <Text style={styles.dateButtonText}>{formatDateDisplay(manualDate)}</Text>
                     </TouchableOpacity>
                     {manualDatePickerVisible && (
-                      <View style={styles.datePickerWrapper}>
-                        <DateTimePicker
-                          value={manualDate}
-                          mode="date"
-                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                          onChange={handleManualDateChange}
-                          themeVariant="light"
-                          textColor={Platform.OS === 'ios' ? colors.text : undefined}
-                        />
-                        {Platform.OS === 'ios' && (
-                          <TouchableOpacity
-                            style={styles.datePickerClose}
-                            onPress={() => setManualDatePickerVisible(false)}
-                          >
-                            <Text style={styles.datePickerCloseText}>Terminer</Text>
-                          </TouchableOpacity>
+                      <View style={[styles.datePickerWrapper, isWeb && styles.webDatePickerWrapper]}>
+                        {isWeb ? (
+                          <>
+                            <View style={styles.webDatePickerRow}>
+                              <View style={styles.webDatePickerColumn}>
+                                <Text style={styles.pickerLabel}>Jour</Text>
+                                  <Picker
+                                    selectedValue={manualDate.getDate()}
+                                    onValueChange={(value) => handleManualWebDatePartChange('day', Number(value))}
+                                    style={[styles.picker, styles.webPicker]}
+                                    itemStyle={[styles.pickerItem, styles.webPickerItem]}
+                                  >
+                                  {dayOptions.map((day) => (
+                                    <Picker.Item
+                                      key={`manual-day-${day}`}
+                                      label={`${day}`}
+                                      value={day}
+                                      color={colors.text}
+                                    />
+                                  ))}
+                                </Picker>
+                              </View>
+                              <View style={styles.webDatePickerColumn}>
+                                <Text style={styles.pickerLabel}>Mois</Text>
+                                <Picker
+                                  selectedValue={manualDate.getMonth()}
+                                  onValueChange={(value) => handleManualWebDatePartChange('month', Number(value))}
+                                  style={[styles.picker, styles.webPicker]}
+                                  itemStyle={[styles.pickerItem, styles.webPickerItem]}
+                                >
+                                  {monthOptions.map((option) => (
+                                    <Picker.Item
+                                      key={`manual-month-${option.value}`}
+                                      label={option.label}
+                                      value={option.value}
+                                      color={colors.text}
+                                    />
+                                  ))}
+                                </Picker>
+                              </View>
+                              <View style={styles.webDatePickerColumn}>
+                                <Text style={styles.pickerLabel}>Année</Text>
+                                <Picker
+                                  selectedValue={manualDate.getFullYear()}
+                                  onValueChange={(value) => handleManualWebDatePartChange('year', Number(value))}
+                                  style={[styles.picker, styles.webPicker]}
+                                  itemStyle={[styles.pickerItem, styles.webPickerItem]}
+                                >
+                                  {manualYearOptions.map((year) => (
+                                    <Picker.Item
+                                      key={`manual-year-${year}`}
+                                      label={`${year}`}
+                                      value={year}
+                                      color={colors.text}
+                                    />
+                                  ))}
+                                </Picker>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.datePickerClose}
+                              onPress={() => setManualDatePickerVisible(false)}
+                            >
+                              <Text style={styles.datePickerCloseText}>Terminer</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <>
+                            <DateTimePicker
+                              value={manualDate}
+                              mode="date"
+                              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                              onChange={handleManualDateChange}
+                              themeVariant={datePickerThemeVariant}
+                              textColor={Platform.OS === 'ios' ? colors.text : undefined}
+                            />
+                            {Platform.OS === 'ios' && (
+                              <TouchableOpacity
+                                style={styles.datePickerClose}
+                                onPress={() => setManualDatePickerVisible(false)}
+                              >
+                                <Text style={styles.datePickerCloseText}>Terminer</Text>
+                              </TouchableOpacity>
+                            )}
+                          </>
                         )}
                       </View>
                     )}
@@ -869,22 +996,24 @@ const HomeScreen = () => {
                             backgroundColor={colors.background}
                           />
                         ) : (
-                          <Picker
-                            selectedValue={manualHours}
-                            onValueChange={(value) => setManualHours(value)}
-                            style={styles.picker}
-                            itemStyle={styles.pickerItem}
-                            themeVariant="light"
-                          >
-                            {Array.from({ length: 24 }).map((_, idx) => (
-                              <Picker.Item
-                                key={`manual-hours-${idx}`}
-                                label={`${idx}`}
-                                value={idx}
-                                color={colors.text}
-                              />
-                            ))}
-                          </Picker>
+                          <View style={[styles.pickerSelectWrapper, isWeb && styles.webPickerSelectWrapper]}>
+                            <Picker
+                              selectedValue={manualHours}
+                              onValueChange={(value) => setManualHours(value)}
+                              style={[styles.picker, isWeb && styles.webPicker]}
+                              itemStyle={[styles.pickerItem, isWeb && styles.webPickerItem]}
+                              themeVariant={pickerThemeVariant}
+                            >
+                              {Array.from({ length: 24 }).map((_, idx) => (
+                                <Picker.Item
+                                  key={`manual-hours-${idx}`}
+                                  label={`${idx}`}
+                                  value={idx}
+                                  color={colors.text}
+                                />
+                              ))}
+                            </Picker>
+                          </View>
                         )}
                       </View>
                       <View style={styles.pickerColumn}>
@@ -899,22 +1028,24 @@ const HomeScreen = () => {
                             backgroundColor={colors.background}
                           />
                         ) : (
-                          <Picker
-                            selectedValue={manualMinutes}
-                            onValueChange={(value) => setManualMinutes(value)}
-                            style={styles.picker}
-                            itemStyle={styles.pickerItem}
-                            themeVariant="light"
-                          >
-                            {Array.from({ length: 60 }).map((_, idx) => (
-                              <Picker.Item
-                                key={`manual-minutes-${idx}`}
-                                label={`${idx}`}
-                                value={idx}
-                                color={colors.text}
-                              />
-                            ))}
-                          </Picker>
+                          <View style={[styles.pickerSelectWrapper, isWeb && styles.webPickerSelectWrapper]}>
+                            <Picker
+                              selectedValue={manualMinutes}
+                              onValueChange={(value) => setManualMinutes(value)}
+                              style={[styles.picker, isWeb && styles.webPicker]}
+                              itemStyle={[styles.pickerItem, isWeb && styles.webPickerItem]}
+                              themeVariant={pickerThemeVariant}
+                            >
+                              {Array.from({ length: 60 }).map((_, idx) => (
+                                <Picker.Item
+                                  key={`manual-minutes-${idx}`}
+                                  label={`${idx}`}
+                                  value={idx}
+                                  color={colors.text}
+                                />
+                              ))}
+                            </Picker>
+                          </View>
                         )}
                       </View>
                     </View>
@@ -1009,22 +1140,91 @@ const HomeScreen = () => {
                       <Text style={styles.dateButtonText}>{formatDateDisplay(entryDate)}</Text>
                     </TouchableOpacity>
                     {entryDatePickerVisible && (
-                      <View style={styles.datePickerWrapper}>
-                        <DateTimePicker
-                          value={entryDate}
-                          mode="date"
-                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                          onChange={handleEntryDateChange}
-                          themeVariant="light"
-                          textColor={Platform.OS === 'ios' ? colors.text : undefined}
-                        />
-                        {Platform.OS === 'ios' && (
-                          <TouchableOpacity
-                            style={styles.datePickerClose}
-                            onPress={() => setEntryDatePickerVisible(false)}
-                          >
-                            <Text style={styles.datePickerCloseText}>Terminer</Text>
-                          </TouchableOpacity>
+                      <View style={[styles.datePickerWrapper, isWeb && styles.webDatePickerWrapper]}>
+                        {isWeb ? (
+                          <>
+                            <View style={styles.webDatePickerRow}>
+                              <View style={styles.webDatePickerColumn}>
+                                <Text style={styles.pickerLabel}>Jour</Text>
+                                <Picker
+                                  selectedValue={entryDate.getDate()}
+                                  onValueChange={(value) => handleEntryWebDatePartChange('day', Number(value))}
+                                  style={[styles.picker, styles.webPicker]}
+                                  itemStyle={[styles.pickerItem, styles.webPickerItem]}
+                                >
+                                  {dayOptions.map((day) => (
+                                    <Picker.Item
+                                      key={`entry-day-${day}`}
+                                      label={`${day}`}
+                                      value={day}
+                                      color={colors.text}
+                                    />
+                                  ))}
+                                </Picker>
+                              </View>
+                              <View style={styles.webDatePickerColumn}>
+                                <Text style={styles.pickerLabel}>Mois</Text>
+                                <Picker
+                                  selectedValue={entryDate.getMonth()}
+                                  onValueChange={(value) => handleEntryWebDatePartChange('month', Number(value))}
+                                  style={[styles.picker, styles.webPicker]}
+                                  itemStyle={[styles.pickerItem, styles.webPickerItem]}
+                                >
+                                  {monthOptions.map((option) => (
+                                    <Picker.Item
+                                      key={`entry-month-${option.value}`}
+                                      label={option.label}
+                                      value={option.value}
+                                      color={colors.text}
+                                    />
+                                  ))}
+                                </Picker>
+                              </View>
+                              <View style={styles.webDatePickerColumn}>
+                                <Text style={styles.pickerLabel}>Année</Text>
+                                <Picker
+                                  selectedValue={entryDate.getFullYear()}
+                                  onValueChange={(value) => handleEntryWebDatePartChange('year', Number(value))}
+                                  style={[styles.picker, styles.webPicker]}
+                                  itemStyle={[styles.pickerItem, styles.webPickerItem]}
+                                >
+                                  {entryYearOptions.map((year) => (
+                                    <Picker.Item
+                                      key={`entry-year-${year}`}
+                                      label={`${year}`}
+                                      value={year}
+                                      color={colors.text}
+                                    />
+                                  ))}
+                                </Picker>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.datePickerClose}
+                              onPress={() => setEntryDatePickerVisible(false)}
+                            >
+                              <Text style={styles.datePickerCloseText}>Terminer</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <>
+                            <DateTimePicker
+                              value={entryDate}
+                              mode="date"
+                              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                              onChange={handleEntryDateChange}
+                              themeVariant={datePickerThemeVariant}
+                              textColor={Platform.OS === 'ios' ? colors.text : undefined}
+                            />
+                            {Platform.OS === 'ios' && (
+                              <TouchableOpacity
+                                style={styles.datePickerClose}
+                                onPress={() => setEntryDatePickerVisible(false)}
+                              >
+                                <Text style={styles.datePickerCloseText}>Terminer</Text>
+                              </TouchableOpacity>
+                            )}
+                          </>
                         )}
                       </View>
                     )}
@@ -1041,22 +1241,24 @@ const HomeScreen = () => {
                             backgroundColor={colors.background}
                           />
                         ) : (
-                          <Picker
-                            selectedValue={entryHours}
-                            onValueChange={(value) => setEntryHours(value)}
-                            style={styles.picker}
-                            itemStyle={styles.pickerItem}
-                            themeVariant="light"
-                          >
-                            {Array.from({ length: 24 }).map((_, idx) => (
-                              <Picker.Item
-                                key={`entry-hours-${idx}`}
-                                label={`${idx}`}
-                                value={idx}
-                                color={colors.text}
-                              />
-                            ))}
-                          </Picker>
+                          <View style={[styles.pickerSelectWrapper, isWeb && styles.webPickerSelectWrapper]}>
+                            <Picker
+                              selectedValue={entryHours}
+                              onValueChange={(value) => setEntryHours(value)}
+                              style={[styles.picker, isWeb && styles.webPicker]}
+                              itemStyle={[styles.pickerItem, isWeb && styles.webPickerItem]}
+                              themeVariant={pickerThemeVariant}
+                            >
+                              {Array.from({ length: 24 }).map((_, idx) => (
+                                <Picker.Item
+                                  key={`entry-hours-${idx}`}
+                                  label={`${idx}`}
+                                  value={idx}
+                                  color={colors.text}
+                                />
+                              ))}
+                            </Picker>
+                          </View>
                         )}
                       </View>
                       <View style={styles.pickerColumn}>
@@ -1071,22 +1273,24 @@ const HomeScreen = () => {
                             backgroundColor={colors.background}
                           />
                         ) : (
-                          <Picker
-                            selectedValue={entryMinutes}
-                            onValueChange={(value) => setEntryMinutes(value)}
-                            style={styles.picker}
-                            itemStyle={styles.pickerItem}
-                            themeVariant="light"
-                          >
-                            {Array.from({ length: 60 }).map((_, idx) => (
-                              <Picker.Item
-                                key={`entry-minutes-${idx}`}
-                                label={`${idx}`}
-                                value={idx}
-                                color={colors.text}
-                              />
-                            ))}
-                          </Picker>
+                          <View style={[styles.pickerSelectWrapper, isWeb && styles.webPickerSelectWrapper]}>
+                            <Picker
+                              selectedValue={entryMinutes}
+                              onValueChange={(value) => setEntryMinutes(value)}
+                              style={[styles.picker, isWeb && styles.webPicker]}
+                              itemStyle={[styles.pickerItem, isWeb && styles.webPickerItem]}
+                              themeVariant={pickerThemeVariant}
+                            >
+                              {Array.from({ length: 60 }).map((_, idx) => (
+                                <Picker.Item
+                                  key={`entry-minutes-${idx}`}
+                                  label={`${idx}`}
+                                  value={idx}
+                                  color={colors.text}
+                                />
+                              ))}
+                            </Picker>
+                          </View>
                         )}
                       </View>
                     </View>
@@ -1138,8 +1342,11 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: spacing.large,
+    paddingTop: spacing.large,
     paddingBottom: spacing.large,
     gap: spacing.large,
+    alignItems: 'center',
+    width: '100%',
   },
   loaderContainer: {
     flex: 1,
@@ -1179,6 +1386,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
     gap: spacing.medium,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
   },
   headerLabel: {
     fontSize: fontSizes.body,
@@ -1207,10 +1416,20 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.small,
     paddingHorizontal: spacing.medium,
     gap: spacing.small,
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
   },
   monthPickerRow: {
     flexDirection: 'row',
     gap: spacing.medium,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  monthPickerColumn: {
+    flex: 1,
+    maxWidth: 320,
+    minWidth: 180,
   },
   monthPickerActions: {
     flexDirection: 'row',
@@ -1262,6 +1481,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
     gap: spacing.medium,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1381,6 +1602,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   primaryButtonText: {
     color: colors.white,
@@ -1430,6 +1654,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.large,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 50,
   },
   modalView: {
     width: '100%',
@@ -1444,6 +1669,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 5,
+    zIndex: 51,
   },
   modalContent: {
     width: '100%',
@@ -1487,6 +1713,22 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.title,
     color: colors.text,
   },
+  pickerSelectWrapper: {
+    width: '100%',
+  },
+  webPickerSelectWrapper: {
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+    borderRadius: 6,
+    backgroundColor: colors.white,
+    overflow: 'hidden',
+  },
+  webPicker: {
+    height: 48,
+  },
+  webPickerItem: {
+    fontSize: fontSizes.body,
+  },
   dateButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1510,6 +1752,21 @@ const styles = StyleSheet.create({
     borderColor: colors.lightGray,
     alignItems: 'center',
     alignSelf: 'center',
+    width: '100%',
+    maxWidth: 520,
+  },
+  webDatePickerWrapper: {
+    paddingHorizontal: spacing.medium,
+  },
+  webDatePickerRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: spacing.medium,
+    justifyContent: 'space-between',
+  },
+  webDatePickerColumn: {
+    flex: 1,
+    minWidth: 90,
   },
   datePickerClose: {
     alignSelf: 'flex-end',

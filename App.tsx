@@ -50,7 +50,8 @@ const styles = StyleSheet.create({
     width: '88%',
     backgroundColor: colors.darkGray,
     borderRadius: 32,
-    padding: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
     shadowColor: '#000',
@@ -65,7 +66,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 26,
-    marginHorizontal: 4,
+    marginHorizontal: 5,
   },
   tabItemActive: {
     backgroundColor: colors.primary,
@@ -106,7 +107,7 @@ const TabBar = ({ state, navigation }: BottomTabBarProps) => {
               style={[styles.tabItem, focused && styles.tabItemActive]}
               activeOpacity={0.9}
             >
-              <Ionicons name={iconName} size={22} color={color} />
+              <Ionicons name={iconName} size={20} color={color} />
             </TouchableOpacity>
           );
         })}

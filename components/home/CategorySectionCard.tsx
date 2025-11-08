@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { colors, fontSizes, spacing } from '../../styles/global';
+import { colors, fontSizes, spacing, layout } from '../../styles/global';
 import { CategorySection } from '../../constants/categories';
 import HistoryList, { HistoryEntry } from './HistoryList';
 
@@ -147,6 +147,9 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
     gap: spacing.medium,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',

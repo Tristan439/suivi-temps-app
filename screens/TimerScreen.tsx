@@ -21,7 +21,7 @@ import * as Notifications from 'expo-notifications';
 import { addEntreeTemps, getStages } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
-import { colors, fontSizes, spacing } from '../styles/global';
+import { colors, fontSizes, spacing, layout } from '../styles/global';
 import { loadSettings, updateSettings } from '../services/settings';
 import { PersistedTimerState, loadTimerState, saveTimerState } from '../services/timerPersistence';
 
@@ -59,6 +59,7 @@ const TimerScreen = () => {
   const notificationsEnabledRef = useRef(false);
   const hydrationReadyRef = useRef(false);
   const [hydrationReady, setHydrationReady] = useState(false);
+  const supportsNotifications = Platform.OS !== 'web';
 
   const route = useRoute<RouteProp<Record<string, TimerRouteParams | undefined>, string>>();
   const routeParams = route.params;
@@ -137,6 +138,9 @@ const TimerScreen = () => {
   );
 
   const cancelScheduledNotification = useCallback(async () => {
+    if (!supportsNotifications) {
+      return;
+    }
     if (!notificationIdRef.current) {
       return;
     }
@@ -150,7 +154,7 @@ const TimerScreen = () => {
   }, []);
 
   const scheduleReminderNotification = useCallback(async (): Promise<string | null> => {
-    if (!notificationsEnabledRef.current || TIMER_REMINDER_DELAY_SECONDS <= 0) {
+    if (!supportsNotifications || !notificationsEnabledRef.current || TIMER_REMINDER_DELAY_SECONDS <= 0) {
       return null;
     }
     try {
@@ -271,6 +275,9 @@ const TimerScreen = () => {
   );
 
   useEffect(() => {
+    if (!supportsNotifications) {
+      return;
+    }
     const ensureNotificationPermission = async () => {
       try {
         const existing = await Notifications.getPermissionsAsync();
@@ -289,7 +296,7 @@ const TimerScreen = () => {
       }
     };
     ensureNotificationPermission();
-  }, []);
+  }, [supportsNotifications]);
 
   useEffect(() => {
     let isMounted = true;
@@ -496,15 +503,17 @@ const TimerScreen = () => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       const wasBackground = Boolean(appState.current && appState.current.match(/inactive|background/));
       const goingBackground = Boolean(nextAppState.match(/inactive|background/));
-      if (appState.current === 'active' && goingBackground) {
+      if (supportsNotifications && appState.current === 'active' && goingBackground) {
         if (isRunning) {
           void scheduleBackgroundReminder();
         }
       }
-      if (wasBackground && nextAppState === 'active') {
+      if (supportsNotifications && wasBackground && nextAppState === 'active') {
         void cancelScheduledNotification().then(() => {
           persistTimerState({ notificationId: undefined }, true);
         });
+        syncDisplayedTime();
+      } else if (wasBackground && nextAppState === 'active') {
         syncDisplayedTime();
       }
       appState.current = nextAppState;
@@ -513,7 +522,14 @@ const TimerScreen = () => {
     return () => {
       subscription.remove();
     };
-  }, [cancelScheduledNotification, isRunning, persistTimerState, scheduleBackgroundReminder, syncDisplayedTime]);
+  }, [
+    cancelScheduledNotification,
+    isRunning,
+    persistTimerState,
+    scheduleBackgroundReminder,
+    supportsNotifications,
+    syncDisplayedTime,
+  ]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
@@ -609,6 +625,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.large,
     paddingVertical: spacing.large,
     justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
   },
   timerCard: {
     backgroundColor: colors.white,
@@ -622,6 +640,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 4,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
   },
   timerDisplay: {
     fontSize: 60,
@@ -631,6 +651,8 @@ const styles = StyleSheet.create({
   },
   controlsContainer: {
     gap: spacing.medium,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
   },
   input: {
     borderWidth: 1,
@@ -644,6 +666,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: spacing.medium,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
   },
   button: {
     flex: 1,

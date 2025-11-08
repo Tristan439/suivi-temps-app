@@ -10,6 +10,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fontSizes, spacing } from '../styles/global';
@@ -37,6 +38,8 @@ const SelectInput: React.FC<SelectInputProps> = ({
   style,
 }) => {
   const [visible, setVisible] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const modalWidth = Math.min(windowWidth - spacing.large * 2, 420);
 
   const selectedOption = useMemo(
     () => options.find((option) => option.value === value),
@@ -89,23 +92,25 @@ const SelectInput: React.FC<SelectInputProps> = ({
         visible={visible}
         onRequestClose={() => setVisible(false)}
       >
-        <Pressable style={styles.backdrop} onPress={() => setVisible(false)} />
-        <View style={styles.modalCard}>
-          <ScrollView
-            contentContainerStyle={styles.optionsContainer}
-            keyboardShouldPersistTaps="handled"
-          >
-            {options.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={styles.option}
-                onPress={() => handleSelect(option.value)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.optionLabel}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+        <View style={styles.modalWrapper}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setVisible(false)} />
+          <View style={[styles.modalCard, { width: modalWidth }]}>
+            <ScrollView
+              contentContainerStyle={styles.optionsContainer}
+              keyboardShouldPersistTaps="handled"
+            >
+              {options.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={styles.option}
+                  onPress={() => handleSelect(option.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.optionLabel}>{option.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </>
@@ -141,15 +146,15 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontWeight: '400',
   },
-  backdrop: {
+  modalWrapper: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.large,
   },
   modalCard: {
-    position: 'absolute',
-    left: spacing.large,
-    right: spacing.large,
-    top: '30%',
+    alignSelf: 'center',
     backgroundColor: colors.white,
     borderRadius: 12,
     paddingVertical: spacing.small,
@@ -158,6 +163,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 4,
+    maxWidth: 420,
     maxHeight: 320,
   },
   optionsContainer: {
