@@ -3,7 +3,7 @@
 ATTENTION : chaque étape doit préserver les fonctionnalités existantes (Pomodoro, Timer, synchronisation Firebase, notifications). Tester et valider à chaque migration pour éviter de tout faire planter.
 
 ## Préparation
-- [ ] Créer une branche Git dédiée (ex. `feature/modular-workspace`) pour isoler tous les travaux de refonte et y faire les tests.
+- [x] Créer une branche Git dédiée (ex. `feature/modular-workspace`) pour isoler tous les travaux de refonte et y faire les tests.
 - [ ] Configurer un projet Firestore “test” ou un environnement séparé (nouveau fichier `google-services` + variables d’env) afin d’expérimenter la couche templates/layouts sans impacter les données actuelles.
 - [ ] Préparer un script d’export/import (gcloud ou Node) pour cloner les données entre prod/test si nécessaire.
 
