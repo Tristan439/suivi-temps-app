@@ -1,10 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  AppState,
-  AppStateStatus,
   Keyboard,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,64 +12,29 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 
-import { addEntreeTemps, getStages } from '../services/firebase';
+import { addEntreeTemps } from '../services/firebase';
 import SelectInput, { SelectOption } from '../components/SelectInput';
 import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../constants/categories';
 import { colors, fontSizes, spacing, layout } from '../styles/global';
 import { AppSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from '../services/settings';
-import {
-  clearPomodoroState,
-  loadPomodoroState,
-  savePomodoroState,
-  PersistedPomodoroState,
-} from '../services/pomodoroPersistence';
-import { handleDurationBlur, handleDurationChange } from '../utils/pomodoroDurations';
+import { clearPomodoroState, loadPomodoroState, savePomodoroState } from '../services/pomodoroPersistence';
+import useToast from '../hooks/useToast';
+import usePomodoroNotifications from '../hooks/usePomodoroNotifications';
+import usePomodoroStages from '../hooks/usePomodoroStages';
+import useDurationField from '../hooks/useDurationField';
+import usePomodoroTimer from '../hooks/usePomodoroTimer';
+import usePomodoroAppStateSync from '../hooks/usePomodoroAppStateSync';
+import { buildPomodoroEntry } from '../utils/pomodoroEntries';
+import { MainTabParamList, PomodoroRouteParams } from '../types/navigation';
 
 const DEFAULT_WORK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroWorkMinutes;
 const DEFAULT_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroBreakMinutes;
 const DEFAULT_LONG_BREAK_MINUTES = DEFAULT_SETTINGS.defaultPomodoroLongBreakMinutes;
 const TOTAL_SESSIONS = 4;
-const POMODORO_STATUS_NOTIFICATION_ID = 'pomodoro-status';
-const POMODORO_FINISH_NOTIFICATION_ID = 'pomodoro-finish';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
-
-interface Stage {
-  id: string;
-  nom: string;
-}
-
-type PomodoroRouteParams = {
-  preselectedStage?: string;
-  preselectedCategory?: string;
-  autoStart?: boolean;
-  initialDescription?: string;
-  taskCardId?: string;
-  preselectedSubCategory?: SubCategoryKey;
-};
 
 const PomodoroScreen = () => {
   const insets = useSafeAreaInsets();
-  const [workDuration, setWorkDuration] = useState(DEFAULT_WORK_MINUTES);
-  const [breakDuration, setBreakDuration] = useState(DEFAULT_BREAK_MINUTES);
-  const [workDurationInput, setWorkDurationInput] = useState(String(DEFAULT_WORK_MINUTES));
-  const [breakDurationInput, setBreakDurationInput] = useState(String(DEFAULT_BREAK_MINUTES));
-  const [longBreakDuration, setLongBreakDuration] = useState(DEFAULT_LONG_BREAK_MINUTES);
-  const [longBreakDurationInput, setLongBreakDurationInput] = useState(String(DEFAULT_LONG_BREAK_MINUTES));
-  const [minutes, setMinutes] = useState(DEFAULT_WORK_MINUTES);
-  const [seconds, setSeconds] = useState(0);
-  const [isActive, setIsActive] = useState(false);
-  const [isWorkSession, setIsWorkSession] = useState(true);
-  const [isLongBreak, setIsLongBreak] = useState(false);
   const [description, setDescription] = useState('Session Pomodoro');
   const [categorie, setCategorie] = useState<string>(
     CATEGORY_OPTIONS.find((option) => option.value === 'autres_pomodoro')?.value ||
@@ -82,106 +44,74 @@ const PomodoroScreen = () => {
   const [subCategory, setSubCategory] = useState<SubCategoryKey>(
     SUB_CATEGORY_OPTIONS[0]?.value ?? 'intervention',
   );
-  const [stages, setStages] = useState<Stage[]>([]);
-  const [selectedStage, setSelectedStage] = useState<string | undefined>();
-  const [completedSessions, setCompletedSessions] = useState(0);
   const [autoStartBreaks, setAutoStartBreaks] = useState(DEFAULT_SETTINGS.autoStartPomodoroBreaks);
   const [preferredStageId, setPreferredStageId] = useState<string | undefined>(DEFAULT_SETTINGS.defaultStageId);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastVisible, setToastVisible] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const phaseEndRef = useRef<number | null>(null);
+  const [hasElapsedCurrentSession, setHasElapsedCurrentSession] = useState(false);
   const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
-  const appState = useRef<AppStateStatus>(AppState.currentState);
-  const notificationsEnabledRef = useRef(false);
-  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const supportsNotifications = Platform.OS !== 'web';
-
-  const showToast = useCallback((message: string) => {
-    setToastMessage(message);
-    setToastVisible(true);
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
+  const timerActiveRef = useRef(false);
+  const persistSettings = useCallback(async (partial: Partial<AppSettings>) => {
+    const updated = { ...settingsRef.current, ...partial };
+    settingsRef.current = updated;
+    try {
+      await saveSettings(updated);
+    } catch (error) {
+      console.error('Error saving pomodoro settings:', error);
     }
-    toastTimeoutRef.current = setTimeout(() => {
-      setToastVisible(false);
-    }, 2500);
   }, []);
-
-  useEffect(
-    () => () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
-  const dismissStatusNotification = useCallback(async () => {
-    if (!supportsNotifications) {
-      return;
-    }
-    try {
-      await Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID);
-    } catch {
-      // noop
-    }
-  }, [supportsNotifications]);
-
-  const cancelFinishNotification = useCallback(async () => {
-    if (!supportsNotifications) {
-      return;
-    }
-    try {
-      await Notifications.cancelScheduledNotificationAsync(POMODORO_FINISH_NOTIFICATION_ID);
-    } catch {
-      // noop
-    }
-  }, [supportsNotifications]);
-
-  const cancelAllPomodoroNotifications = useCallback(async () => {
-    await dismissStatusNotification();
-    await cancelFinishNotification();
-  }, [cancelFinishNotification, dismissStatusNotification]);
-
-  const scheduleFinishNotification = useCallback(
-    async (durationSeconds: number, phaseType: 'work' | 'break' | 'long-break'): Promise<void> => {
-      if (!supportsNotifications || !notificationsEnabledRef.current) {
-        return;
-      }
-      try {
-        await cancelFinishNotification();
-        const trigger: Notifications.TimeIntervalTriggerInput = {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: Math.max(1, durationSeconds),
-          repeats: false,
-        };
-        await Notifications.scheduleNotificationAsync({
-          identifier: POMODORO_FINISH_NOTIFICATION_ID,
-          content: {
-            title:
-              phaseType === 'work'
-                ? 'Session de travail terminée'
-                : phaseType === 'long-break'
-                  ? 'Longue pause terminée'
-                  : 'Pause terminée',
-            body:
-              phaseType === 'work'
-                ? 'Temps de faire une pause.'
-                : 'Revenez à votre session de travail.',
-            data: {
-              notificationType: 'pomodoro',
-              phaseType,
-            },
-          },
-          trigger,
-        });
-      } catch (error) {
-        console.error('Error scheduling pomodoro notification:', error);
-      }
-    },
-    [cancelFinishNotification, supportsNotifications],
-  );
+  const resetElapsedSession = useCallback(() => {
+    setHasElapsedCurrentSession(false);
+  }, []);
+  const {
+    value: workDuration,
+    inputValue: workDurationInput,
+    handleChange: handleWorkDurationChange,
+    handleBlur: handleWorkDurationBlur,
+    syncFromSettings: syncWorkDurationFromSettings,
+  } = useDurationField({
+    initialMinutes: DEFAULT_WORK_MINUTES,
+    isActive: timerActiveRef.current,
+    hasElapsedCurrentSession,
+    onResetProgress: resetElapsedSession,
+    persistSettings,
+    settingKey: 'defaultPomodoroWorkMinutes',
+  });
+  const {
+    value: breakDuration,
+    inputValue: breakDurationInput,
+    handleChange: handleBreakDurationChange,
+    handleBlur: handleBreakDurationBlur,
+    syncFromSettings: syncBreakDurationFromSettings,
+  } = useDurationField({
+    initialMinutes: DEFAULT_BREAK_MINUTES,
+    isActive: timerActiveRef.current,
+    hasElapsedCurrentSession,
+    onResetProgress: resetElapsedSession,
+    persistSettings,
+    settingKey: 'defaultPomodoroBreakMinutes',
+  });
+  const {
+    value: longBreakDuration,
+    inputValue: longBreakDurationInput,
+    handleChange: handleLongBreakDurationChange,
+    handleBlur: handleLongBreakDurationBlur,
+    syncFromSettings: syncLongBreakDurationFromSettings,
+  } = useDurationField({
+    initialMinutes: DEFAULT_LONG_BREAK_MINUTES,
+    isActive: timerActiveRef.current,
+    hasElapsedCurrentSession,
+    onResetProgress: resetElapsedSession,
+    persistSettings,
+    settingKey: 'defaultPomodoroLongBreakMinutes',
+  });
+  const { message: toastMessage, visible: toastVisible, showToast } = useToast();
+  const {
+    supportsNotifications,
+    scheduleFinishNotification,
+    scheduleStatusNotification,
+    cancelFinishNotification,
+    dismissStatusNotification,
+    cancelAllPomodoroNotifications,
+  } = usePomodoroNotifications();
 
   const categoryOptions = useMemo<SelectOption[]>(
     () => CATEGORY_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
@@ -192,57 +122,107 @@ const PomodoroScreen = () => {
     [],
   );
 
-  const scheduleNotificationForRemainingTime = useCallback(async () => {
-    if (!supportsNotifications || !notificationsEnabledRef.current) {
-      return;
-    }
-    if (!phaseEndRef.current) {
-      return;
-    }
-    const remainingSeconds = Math.max(0, Math.floor((phaseEndRef.current - Date.now()) / 1000));
-    if (remainingSeconds <= 0) {
-      return;
-    }
-    const phaseType: 'work' | 'break' | 'long-break' = isWorkSession
-      ? 'work'
-      : isLongBreak
-        ? 'long-break'
-        : 'break';
-
-    const endTime = new Date(Date.now() + remainingSeconds * 1000);
-    const formattedEndTime = `${String(endTime.getHours()).padStart(2, '0')}:${String(
-      endTime.getMinutes(),
-    ).padStart(2, '0')}`;
-    const statusBody =
-      phaseType === 'work'
-        ? `Session de travail en cours. Fin prévue à ${formattedEndTime}.`
-        : phaseType === 'long-break'
-          ? `Longue pause en cours. Fin prévue à ${formattedEndTime}.`
-          : `Pause en cours. Fin prévue à ${formattedEndTime}.`;
-
-    try {
-      await dismissStatusNotification();
-      await Notifications.scheduleNotificationAsync({
-        identifier: POMODORO_STATUS_NOTIFICATION_ID,
-        content: {
-          title: 'Session en cours',
-          body: statusBody,
-          data: { notificationType: 'pomodoro-status', phaseType },
-          sound: false,
-        },
-        trigger: null,
-      });
-    } catch (error) {
-      console.error('Error showing pomodoro status notification:', error);
-    }
-  }, [dismissStatusNotification, isLongBreak, isWorkSession, supportsNotifications]);
-
-  const route = useRoute<RouteProp<Record<string, PomodoroRouteParams | undefined>, string>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Pomodoro'>>();
   const navigation = useNavigation<any>();
   const routeParams = route.params;
+  const { stageOptions, hasStages, selectedStage, setSelectedStage, refreshStages } = usePomodoroStages({
+    routeStageId: routeParams?.preselectedStage,
+    preferredStageId,
+  });
   const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
   const [linkedTaskCardId, setLinkedTaskCardId] = useState<string | undefined>(routeParams?.taskCardId);
-  const [hasElapsedCurrentSession, setHasElapsedCurrentSession] = useState(false);
+
+  const getTimerMetadata = useCallback(
+    () => ({
+      categorie,
+      subCategory,
+      description,
+      selectedStage,
+      linkedTaskCardId,
+    }),
+    [categorie, description, linkedTaskCardId, selectedStage, subCategory],
+  );
+
+  const handleAutoLogWorkSession = useCallback(
+    async (durationSeconds: number) => {
+      if (!selectedStage) {
+        return;
+      }
+      const entryData = buildPomodoroEntry({
+        durationSeconds,
+        categorie,
+        subCategory,
+        description,
+        stageId: selectedStage,
+        type: 'pomodoro',
+        taskCardId: linkedTaskCardId,
+      });
+      await addEntreeTemps(entryData);
+      showToast('Session Pomodoro enregistrée');
+    },
+    [categorie, description, linkedTaskCardId, selectedStage, showToast, subCategory],
+  );
+
+  const handleAutoLogError = useCallback((error: unknown) => {
+    console.error('Error saving pomodoro session:', error);
+    Alert.alert('Erreur', "Impossible d'enregistrer la session.");
+  }, []);
+
+  const {
+    minutes,
+    seconds,
+    isActive,
+    isWorkSession,
+    isLongBreak,
+    completedSessions,
+    startSession,
+    toggleTimer,
+    skipBreak,
+    resetTimer,
+    scheduleNotificationForRemainingTime,
+    hydrateFromPersistedState,
+    syncNow: syncTimerNow,
+  } = usePomodoroTimer({
+    workDuration,
+    breakDuration,
+    longBreakDuration,
+    autoStartBreaks,
+    hasElapsedCurrentSession,
+    setHasElapsedCurrentSession,
+    getMetadata: getTimerMetadata,
+    scheduleFinishNotification,
+    scheduleStatusNotification,
+    cancelFinishNotification,
+    dismissStatusNotification,
+    cancelAllPomodoroNotifications,
+    savePomodoroState,
+    clearPomodoroState,
+    onAutoLogWorkSession: handleAutoLogWorkSession,
+    onAutoLogError: handleAutoLogError,
+  });
+  timerActiveRef.current = isActive;
+
+  useEffect(() => {
+    if (shouldAutoStart && selectedStage) {
+      startSession();
+      setShouldAutoStart(false);
+      if (routeParams?.autoStart) {
+        navigation.setParams({ ...routeParams, autoStart: false });
+      }
+    }
+  }, [shouldAutoStart, selectedStage, startSession, navigation, routeParams]);
+
+  const handleForegroundResume = useCallback(async () => {
+    await dismissStatusNotification();
+    syncTimerNow();
+  }, [dismissStatusNotification, syncTimerNow]);
+
+  usePomodoroAppStateSync({
+    isActive,
+    supportsNotifications,
+    onBackgroundSchedule: scheduleNotificationForRemainingTime,
+    onForegroundResume: handleForegroundResume,
+  });
 
   const applySettings = useCallback(
     (incoming: AppSettings) => {
@@ -254,26 +234,9 @@ const PomodoroScreen = () => {
         defaultStageId: nextDefaultStageId,
       } = incoming;
 
-      setWorkDuration(nextWork);
-      setWorkDurationInput(String(nextWork));
-      if (!isActive && isWorkSession && !hasElapsedCurrentSession) {
-        setMinutes(nextWork);
-        setSeconds(0);
-      }
-
-      setBreakDuration(nextBreak);
-      setBreakDurationInput(String(nextBreak));
-      if (!isActive && !isWorkSession && !isLongBreak && !hasElapsedCurrentSession) {
-        setMinutes(nextBreak);
-        setSeconds(0);
-      }
-
-      setLongBreakDuration(nextLongBreak);
-      setLongBreakDurationInput(String(nextLongBreak));
-      if (!isActive && !isWorkSession && isLongBreak && !hasElapsedCurrentSession) {
-        setMinutes(nextLongBreak);
-        setSeconds(0);
-      }
+      syncWorkDurationFromSettings(nextWork);
+      syncBreakDurationFromSettings(nextBreak);
+      syncLongBreakDurationFromSettings(nextLongBreak);
 
       setAutoStartBreaks(nextAutoStartBreaks);
       setPreferredStageId(nextDefaultStageId);
@@ -289,7 +252,7 @@ const PomodoroScreen = () => {
         defaultStageId: nextDefaultStageId,
       };
     },
-    [isActive, isWorkSession, isLongBreak, hasElapsedCurrentSession],
+    [isActive, hasElapsedCurrentSession, syncWorkDurationFromSettings, syncBreakDurationFromSettings, syncLongBreakDurationFromSettings],
   );
 
   const loadAndApplySettings = useCallback(async () => {
@@ -301,61 +264,6 @@ const PomodoroScreen = () => {
       console.error('Error loading pomodoro settings:', error);
     }
   }, [applySettings]);
-
-  const persistSettings = useCallback(async (partial: Partial<AppSettings>) => {
-    const updated = { ...settingsRef.current, ...partial };
-    settingsRef.current = updated;
-    try {
-      await saveSettings(updated);
-    } catch (error) {
-      console.error('Error saving pomodoro settings:', error);
-    }
-  }, []);
-
-  const applyStageSelection = useCallback(
-    (availableStages: Stage[]) => {
-      if (availableStages.length === 0) {
-        return;
-      }
-
-      const routeStage = routeParams?.preselectedStage;
-
-      if (routeStage && availableStages.some((stage) => stage.id === routeStage)) {
-        setSelectedStage(routeStage);
-        return;
-      }
-
-      if (preferredStageId && availableStages.some((stage) => stage.id === preferredStageId)) {
-        setSelectedStage((current) => {
-          if (current && availableStages.some((stage) => stage.id === current)) {
-            return current;
-          }
-          return preferredStageId;
-        });
-        return;
-      }
-
-      setSelectedStage((current) => {
-        if (current && availableStages.some((stage) => stage.id === current)) {
-          return current;
-        }
-        return availableStages[0].id;
-      });
-    },
-    [preferredStageId, routeParams?.preselectedStage],
-  );
-
-  const refreshStages = useCallback(async () => {
-    try {
-      const fetchedStages = await getStages();
-      const typedStages = (Array.isArray(fetchedStages) ? fetchedStages : []) as Stage[];
-      setStages(typedStages);
-      applyStageSelection(typedStages);
-    } catch (error) {
-      console.error('Error fetching stages:', error);
-      Alert.alert('Erreur', 'Impossible de charger les stages.');
-    }
-  }, [applyStageSelection]);
 
   useFocusEffect(
     useCallback(() => {
@@ -373,12 +281,6 @@ const PomodoroScreen = () => {
       };
     }, [loadAndApplySettings, refreshStages]),
   );
-
-  useEffect(() => {
-    if (stages.length > 0) {
-      applyStageSelection(stages);
-    }
-  }, [stages, applyStageSelection]);
 
   useEffect(() => {
     if (routeParams?.preselectedCategory) {
@@ -410,25 +312,7 @@ const PomodoroScreen = () => {
     if (!supportsNotifications) {
       return;
     }
-    const ensureNotificationPermission = async () => {
-      try {
-        const existing = await Notifications.getPermissionsAsync();
-        let granted =
-          existing.granted ||
-          existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-        if (!granted) {
-          const request = await Notifications.requestPermissionsAsync();
-          granted =
-            request.granted ||
-            request.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-        }
-        notificationsEnabledRef.current = Boolean(granted);
-        await cancelAllPomodoroNotifications();
-      } catch (error) {
-        console.error('Error requesting notification permissions:', error);
-      }
-    };
-    ensureNotificationPermission();
+    void cancelAllPomodoroNotifications();
   }, [cancelAllPomodoroNotifications, supportsNotifications]);
 
   useEffect(() => {
@@ -439,15 +323,10 @@ const PomodoroScreen = () => {
         if (!isMounted || !persisted) {
           return;
         }
-        const remainingMs = persisted.phaseEndTimestamp - Date.now();
-        if (remainingMs <= 0) {
-          await clearPomodoroState();
+        const hydrated = await hydrateFromPersistedState(persisted);
+        if (!hydrated) {
           return;
         }
-        phaseEndRef.current = persisted.phaseEndTimestamp;
-        setIsWorkSession(persisted.isWorkSession);
-        setIsLongBreak(persisted.isLongBreak);
-        setCompletedSessions(persisted.completedSessions ?? 0);
         if (persisted.categorie) {
           setCategorie(persisted.categorie);
         }
@@ -463,17 +342,6 @@ const PomodoroScreen = () => {
         if (persisted.linkedTaskCardId !== undefined) {
           setLinkedTaskCardId(persisted.linkedTaskCardId);
         }
-        setHasElapsedCurrentSession(true);
-        setIsActive(true);
-        const remainingSeconds = Math.ceil(remainingMs / 1000);
-        if (remainingSeconds > 0) {
-          const restoredPhaseType: 'work' | 'break' | 'long-break' = persisted.isWorkSession
-            ? 'work'
-            : persisted.isLongBreak
-              ? 'long-break'
-              : 'break';
-          await scheduleFinishNotification(remainingSeconds, restoredPhaseType);
-        }
       } catch (error) {
         console.error('Error restoring pomodoro session:', error);
       }
@@ -482,353 +350,20 @@ const PomodoroScreen = () => {
     return () => {
       isMounted = false;
     };
-  }, [clearPomodoroState, scheduleFinishNotification]);
-
-  const persistActivePhase = useCallback(
-    (phaseEndTimestamp: number, config: { isWorkSession: boolean; isLongBreak: boolean; completedSessions: number }) => {
-      const payload: PersistedPomodoroState = {
-        phaseEndTimestamp,
-        isWorkSession: config.isWorkSession,
-        isLongBreak: config.isLongBreak,
-        completedSessions: config.completedSessions,
-        categorie,
-        subCategorie: subCategory,
-        description,
-        selectedStage,
-        linkedTaskCardId,
-      };
-      savePomodoroState(payload).catch((error) => {
-        console.error('Error saving pomodoro phase:', error);
-      });
-    },
-    [categorie, description, linkedTaskCardId, selectedStage, subCategory],
-  );
-
-  const clearPersistedPhase = useCallback(() => {
-    clearPomodoroState().catch((error) => {
-      console.error('Error clearing pomodoro state:', error);
-    });
-  }, []);
-
-  const schedulePhaseEnd = useCallback(
-    (
-      durationSeconds: number,
-      overrides?: { isWorkSession?: boolean; isLongBreak?: boolean; completedSessions?: number },
-    ) => {
-      void cancelFinishNotification();
-      void dismissStatusNotification();
-      const nextIsWorkSession = overrides?.isWorkSession ?? isWorkSession;
-      const nextIsLongBreak = overrides?.isLongBreak ?? isLongBreak;
-      const nextCompletedSessions = overrides?.completedSessions ?? completedSessions;
-      const phaseEndTimestamp = Date.now() + durationSeconds * 1000;
-      phaseEndRef.current = phaseEndTimestamp;
-      persistActivePhase(phaseEndTimestamp, {
-        isWorkSession: nextIsWorkSession,
-        isLongBreak: nextIsLongBreak,
-        completedSessions: nextCompletedSessions,
-      });
-      const nextPhaseType: 'work' | 'break' | 'long-break' = nextIsWorkSession
-        ? 'work'
-        : nextIsLongBreak
-          ? 'long-break'
-          : 'break';
-      void scheduleFinishNotification(durationSeconds, nextPhaseType);
-    },
-    [
-      cancelFinishNotification,
-      completedSessions,
-      isLongBreak,
-      isWorkSession,
-      scheduleFinishNotification,
-      dismissStatusNotification,
-      persistActivePhase,
-    ],
-  );
-
-  const clearPhaseEnd = useCallback(() => {
-    phaseEndRef.current = null;
-    void cancelAllPomodoroNotifications();
-    void clearPersistedPhase();
-  }, [cancelAllPomodoroNotifications, clearPersistedPhase]);
-
-  const skipBreak = useCallback(() => {
-    if (isWorkSession) {
-      return;
-    }
-    const nextPhaseEnd = Date.now() + workDuration * 60 * 1000;
-    phaseEndRef.current = nextPhaseEnd;
-    setIsWorkSession(true);
-    setIsLongBreak(false);
-    setMinutes(workDuration);
-    setSeconds(0);
-    setHasElapsedCurrentSession(false);
-    persistActivePhase(nextPhaseEnd, {
-      isWorkSession: true,
-      isLongBreak: false,
-      completedSessions,
-    });
-    dismissStatusNotification();
-    scheduleFinishNotification(workDuration * 60, 'work');
-    setIsActive(true);
-  }, [
-    completedSessions,
-    dismissStatusNotification,
-    isWorkSession,
-    persistActivePhase,
-    scheduleFinishNotification,
-    workDuration,
-  ]);
-
-  const transitionToNextPhase = useCallback(() => {
-    const wasWorkSession = isWorkSession;
-    Notifications.dismissNotificationAsync(POMODORO_STATUS_NOTIFICATION_ID).catch(() => {});
-
-    if (wasWorkSession && selectedStage) {
-      const entryData = {
-        dureeSecondes: workDuration * 60,
-        categorie,
-        subCategorie: subCategory,
-        description,
-        date: new Date(),
-        stageId: selectedStage,
-        type: 'pomodoro' as const,
-        ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
-      };
-      addEntreeTemps(entryData)
-        .then(() => {
-          showToast('Session Pomodoro enregistrée');
-        })
-        .catch((error) => {
-          console.error('Error saving pomodoro session:', error);
-          Alert.alert('Erreur', "Impossible d'enregistrer la session.");
-        });
-    }
-
-    const nextCompletedCount = wasWorkSession ? completedSessions + 1 : completedSessions;
-    if (wasWorkSession) {
-      setCompletedSessions(nextCompletedCount);
-    }
-
-    const shouldTakeLongBreak = wasWorkSession && nextCompletedCount % TOTAL_SESSIONS === 0;
-    const nextMinutes = wasWorkSession
-      ? shouldTakeLongBreak
-        ? longBreakDuration
-        : breakDuration
-      : workDuration;
-
-    setIsWorkSession(!wasWorkSession);
-    setIsLongBreak(wasWorkSession ? shouldTakeLongBreak : false);
-    setMinutes(nextMinutes);
-    setSeconds(0);
-    setHasElapsedCurrentSession(false);
-
-    const shouldAutoStartNextPhase = wasWorkSession && autoStartBreaks;
-    setIsActive(shouldAutoStartNextPhase);
-    if (shouldAutoStartNextPhase) {
-      schedulePhaseEnd(nextMinutes * 60, {
-        isWorkSession: !wasWorkSession,
-        isLongBreak: wasWorkSession ? shouldTakeLongBreak : false,
-        completedSessions: wasWorkSession ? nextCompletedCount : completedSessions,
-      });
-    } else {
-      clearPhaseEnd();
-    }
-  }, [
-    autoStartBreaks,
-    breakDuration,
-    clearPhaseEnd,
-    completedSessions,
-    description,
-    isWorkSession,
-    linkedTaskCardId,
-    longBreakDuration,
-    schedulePhaseEnd,
-    selectedStage,
-    subCategory,
-    workDuration,
-    categorie,
-    showToast,
-  ]);
-
-  const syncRemainingTime = useCallback(() => {
-    if (!phaseEndRef.current) {
-      return;
-    }
-    const remainingMs = phaseEndRef.current - Date.now();
-    if (remainingMs <= 0) {
-      setMinutes(0);
-      setSeconds(0);
-      setHasElapsedCurrentSession(true);
-      transitionToNextPhase();
-      return;
-    }
-    const remainingSeconds = Math.ceil(remainingMs / 1000);
-    const nextMinutes = Math.floor(remainingSeconds / 60);
-    const nextSeconds = remainingSeconds % 60;
-    setMinutes(nextMinutes);
-    setSeconds(nextSeconds);
-    const totalPhaseSeconds =
-      (isWorkSession ? workDuration : isLongBreak ? longBreakDuration : breakDuration) * 60;
-    if (remainingSeconds < totalPhaseSeconds) {
-      setHasElapsedCurrentSession(true);
-    }
-  }, [
-    breakDuration,
-    isLongBreak,
-    isWorkSession,
-    longBreakDuration,
-    transitionToNextPhase,
-    workDuration,
-  ]);
-
-  useEffect(() => {
-    if (isActive) {
-      intervalRef.current = setInterval(() => {
-        syncRemainingTime();
-      }, 1000);
-      syncRemainingTime();
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [isActive, syncRemainingTime]);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      const wasBackground = Boolean(appState.current && appState.current.match(/inactive|background/));
-      const goingBackground = nextAppState.match(/inactive|background/);
-      if (supportsNotifications && appState.current === 'active' && goingBackground) {
-        if (isActive) {
-          void scheduleNotificationForRemainingTime();
-        }
-      }
-      if (supportsNotifications && wasBackground && nextAppState === 'active') {
-        void dismissStatusNotification();
-        syncRemainingTime();
-      }
-      appState.current = nextAppState;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [dismissStatusNotification, isActive, scheduleNotificationForRemainingTime, supportsNotifications, syncRemainingTime]);
-
-  const startSession = useCallback(() => {
-    if (isActive) {
-      return;
-    }
-    const remainingSeconds = minutes * 60 + seconds;
-    if (remainingSeconds <= 0) {
-      return;
-    }
-    schedulePhaseEnd(remainingSeconds, {
-      isWorkSession,
-      isLongBreak,
-      completedSessions,
-    });
-    setIsActive(true);
-  }, [completedSessions, isActive, isLongBreak, isWorkSession, minutes, schedulePhaseEnd, seconds]);
-
-  useEffect(() => {
-    if (shouldAutoStart && selectedStage) {
-      startSession();
-      setShouldAutoStart(false);
-      if (routeParams?.autoStart) {
-        navigation.setParams({ ...routeParams, autoStart: false });
-      }
-    }
-  }, [shouldAutoStart, selectedStage, startSession, navigation, routeParams]);
-
-  const toggleTimer = useCallback(() => {
-    if (isActive) {
-      syncRemainingTime();
-      setIsActive(false);
-      clearPhaseEnd();
-      return;
-    }
-    startSession();
-  }, [clearPhaseEnd, isActive, startSession, syncRemainingTime]);
-
-  const handleWorkDurationChange = (value: string) =>
-    handleDurationChange(value, setWorkDurationInput, setWorkDuration, {
-      isActive,
-      hasElapsedCurrentSession,
-      onResetProgress: () => setHasElapsedCurrentSession(false),
-    });
-
-  const handleBreakDurationChange = (value: string) =>
-    handleDurationChange(value, setBreakDurationInput, setBreakDuration, {
-      isActive,
-      hasElapsedCurrentSession,
-      onResetProgress: () => setHasElapsedCurrentSession(false),
-    });
-
-  const handleWorkDurationBlur = () => {
-    handleDurationBlur(
-      workDurationInput,
-      workDuration,
-      setWorkDurationInput,
-      setWorkDuration,
-      { persist: persistSettings, settingKey: 'defaultPomodoroWorkMinutes' },
-    );
-  };
-
-  const handleBreakDurationBlur = () => {
-    handleDurationBlur(
-      breakDurationInput,
-      breakDuration,
-      setBreakDurationInput,
-      setBreakDuration,
-      { persist: persistSettings, settingKey: 'defaultPomodoroBreakMinutes' },
-    );
-  };
-
-  const handleLongBreakDurationChange = (value: string) =>
-    handleDurationChange(value, setLongBreakDurationInput, setLongBreakDuration, {
-      isActive,
-      hasElapsedCurrentSession,
-      onResetProgress: () => setHasElapsedCurrentSession(false),
-    });
+  }, [hydrateFromPersistedState]);
 
   const handleStageChange = useCallback(
     (value: string) => {
-      setSelectedStage(value);
-      setPreferredStageId(value);
-      persistSettings({ defaultStageId: value || undefined });
+      const normalizedValue = value || undefined;
+      setSelectedStage(normalizedValue);
+      setPreferredStageId(normalizedValue);
+      persistSettings({ defaultStageId: normalizedValue });
     },
-    [persistSettings],
+    [persistSettings, setPreferredStageId, setSelectedStage],
   );
 
-  const handleLongBreakDurationBlur = () => {
-    handleDurationBlur(
-      longBreakDurationInput,
-      longBreakDuration,
-      setLongBreakDurationInput,
-      setLongBreakDuration,
-      { persist: persistSettings, settingKey: 'defaultPomodoroLongBreakMinutes' },
-    );
-  };
 
-  useEffect(() => {
-    if (isActive || hasElapsedCurrentSession) {
-      return;
-    }
 
-    if (isWorkSession) {
-      setMinutes(workDuration);
-      setSeconds(0);
-    } else {
-      const targetBreak = isLongBreak ? longBreakDuration : breakDuration;
-      setMinutes(targetBreak);
-      setSeconds(0);
-    }
-  }, [workDuration, breakDuration, longBreakDuration, isWorkSession, isLongBreak, isActive, hasElapsedCurrentSession]);
 
   const handleStopEarly = async () => {
     if (!selectedStage) {
@@ -859,16 +394,15 @@ const PomodoroScreen = () => {
 
     if (effectiveSeconds > 0) {
       try {
-        const entryData = {
-          dureeSecondes: effectiveSeconds,
+        const entryData = buildPomodoroEntry({
+          durationSeconds: effectiveSeconds,
           categorie,
-          subCategorie: subCategory,
+          subCategory,
           description,
-          date: new Date(),
           stageId: selectedStage,
-          type: 'pomodoro-stop' as const,
-          ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
-        };
+          type: 'pomodoro-stop',
+          taskCardId: linkedTaskCardId,
+        });
         await addEntreeTemps(entryData);
         showToast('Durée écoulée enregistrée');
       } catch (error) {
@@ -890,36 +424,21 @@ const PomodoroScreen = () => {
       return;
     }
     try {
-      const entryData = {
-        dureeSecondes: elapsedSeconds,
+      const entryData = buildPomodoroEntry({
+        durationSeconds: elapsedSeconds,
         categorie,
-        subCategorie: subCategory,
+        subCategory,
         description,
-        date: new Date(),
         stageId: selectedStage,
-        type: 'pomodoro' as const,
-        ...(linkedTaskCardId ? { taskCardId: linkedTaskCardId } : {}),
-      };
+        type: 'pomodoro',
+        taskCardId: linkedTaskCardId,
+      });
       await addEntreeTemps(entryData);
       showToast('Session enregistrée');
       resetTimer();
     } catch (error) {
       console.error('Error saving paused pomodoro session:', error);
       Alert.alert('Erreur', "Impossible d'enregistrer la session.");
-    }
-  };
-
-  const resetTimer = () => {
-    clearPhaseEnd();
-    setIsActive(false);
-    setIsWorkSession(true);
-    setMinutes(workDuration);
-    setSeconds(0);
-    setCompletedSessions(0);
-    setIsLongBreak(false);
-    setHasElapsedCurrentSession(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
     }
   };
 
@@ -1025,9 +544,9 @@ const PomodoroScreen = () => {
           <SelectInput
             value={selectedStage}
             onValueChange={handleStageChange}
-            options={stages.map((stage) => ({ label: stage.nom, value: stage.id }))}
-            placeholder={stages.length === 0 ? 'Aucun stage disponible' : 'Sélectionner un stage'}
-            disabled={stages.length === 0 || isActive}
+            options={stageOptions}
+            placeholder={hasStages ? 'Sélectionner un stage' : 'Aucun stage disponible'}
+            disabled={!hasStages || isActive}
           />
           <SelectInput
             value={categorie}

@@ -16,9 +16,12 @@ import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import { auth } from './services/firebase';
 import { colors } from './styles/global';
+import { configureGlobalNotificationHandler } from './utils/notifications';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
+configureGlobalNotificationHandler();
 
 const TAB_ICONS: Record<string, { focused: string; default: string }> = {
   Accueil: { focused: 'home', default: 'home-outline' },

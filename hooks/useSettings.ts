@@ -4,11 +4,7 @@ import { Alert } from 'react-native';
 import { SelectOption } from '../components/SelectInput';
 import { addStage, deleteStage, getStages, updateStage } from '../services/firebase';
 import { AppSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from '../services/settings';
-
-interface Stage {
-  id: string;
-  nom: string;
-}
+import { Stage } from '../types/stage';
 
 export interface UseSettingsReturn {
   loading: boolean;

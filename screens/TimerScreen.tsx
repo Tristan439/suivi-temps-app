@@ -24,18 +24,12 @@ import { CATEGORY_OPTIONS, SUB_CATEGORY_OPTIONS, SubCategoryKey } from '../const
 import { colors, fontSizes, spacing, layout } from '../styles/global';
 import { loadSettings, updateSettings } from '../services/settings';
 import { PersistedTimerState, loadTimerState, saveTimerState } from '../services/timerPersistence';
+import { MainTabParamList, TimerRouteParams } from '../types/navigation';
 
 interface Stage {
   id: string;
   nom: string;
 }
-
-type TimerRouteParams = {
-  preselectedCategory?: string;
-  preselectedStage?: string;
-  autoStart?: boolean;
-  preselectedSubCategory?: SubCategoryKey;
-};
 
 const TIMER_REMINDER_DELAY_SECONDS = 60;
 
@@ -61,7 +55,7 @@ const TimerScreen = () => {
   const [hydrationReady, setHydrationReady] = useState(false);
   const supportsNotifications = Platform.OS !== 'web';
 
-  const route = useRoute<RouteProp<Record<string, TimerRouteParams | undefined>, string>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Minuteur'>>();
   const routeParams = route.params;
   const navigation = useNavigation<any>();
   const [shouldAutoStart, setShouldAutoStart] = useState(routeParams?.autoStart ?? false);
